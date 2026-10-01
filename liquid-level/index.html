@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#101820">
+  <meta name="description" content="An interactive two-state irrigation control lab. Change the controller, open a second branch, and discover integral windup.">
+  <title>Drip lab · A small experiment in control</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23101820'/%3E%3Cpath d='M16 5C13 10 7 16 7 21a9 9 0 0018 0c0-5-6-11-9-16' fill='%237ed4ee'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="styles.css">
+  <script src="model.js" defer></script>
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <header class="masthead"><a class="brand" href="./"><span class="brand-mark">◒</span> Drip lab<span class="brand-note"> / CONTROL EXPERIMENTS</span></a><span class="edition">Two states. One stubborn pump.</span><nav class="club-links" aria-label="Club resources"><a href="../">← Club index</a><a href="paper/local-regime-map.pdf" lang="ru">Local regime map (PDF · Russian)</a></nav></header>
+  <main>
+    <div class="intro"><div><p class="eyebrow">THE IRRIGATION NOTEBOOK</p><h1>A little water. A lot of dynamics.</h1><p>Keep the drips steady. Open another branch. Find out what the controller remembers.</p></div><span class="model-tag">ḣ = u − c(t)√h<br>ż = controller rule</span></div>
+    <section class="regime-picker" aria-label="Qualitative behavior presets"><p class="eyebrow">EXPLORE A BEHAVIOR · LOCAL TO THE EQUILIBRIUM</p><div id="regime-buttons"></div><p id="regime-details" class="quiet">Or follow the five irrigation experiments below.</p></section>
+    <nav class="experiments" aria-label="Guided experiments">
+      <button data-step="0" aria-current="step"><span>01</span> Steady supply</button>
+      <button data-step="1"><span>02</span> Add feedback</button>
+      <button data-step="2"><span>03</span> Add memory</button>
+      <button data-step="3"><span>04</span> Hit the limit</button>
+      <button data-step="4"><span>05</span> The aftermath</button>
+    </nav>
+    <section class="lesson" aria-labelledby="lesson-title"><div><p id="lesson-kicker" class="eyebrow">EXPERIMENT 01</p><h2 id="lesson-title">A balance that only works once.</h2><p id="lesson-body"></p></div><div class="prediction"><span class="eyebrow">BEFORE YOU PRESS PLAY</span><p id="prediction"></p><button class="text-button" id="next-step">Next experiment →</button></div></section>
+    <div class="workbench">
+      <aside class="controls panel" aria-label="Experiment controls">
+        <div class="panel-heading"><h2>The controller</h2><span class="eyebrow">TINKER</span></div>
+        <label for="controller">Control law</label><select id="controller"><option value="manual">Constant pump</option><option value="proportional">Proportional feedback</option><option value="integral">Integral feedback</option><option value="custom">Custom formulas</option></select>
+        <div class="equation" id="formula-display"></div>
+        <div id="custom-editor" hidden>
+          <label for="command-formula">Requested inflow · u_c</label><input id="command-formula" value="KI * z" spellcheck="false" autocomplete="off">
+          <label for="memory-formula">Memory derivative · dz/dt</label><input id="memory-formula" value="e" spellcheck="false" autocomplete="off">
+          <button class="button secondary" id="apply-formulas">Apply formulas</button>
+          <details><summary>Formula reference</summary><p>Variables: h, z, t, e, target, KI, KP, qstar, umax, c, u0. The memory rule also accepts uc and u.</p><p>Operators: + − * / ^, comparisons, and condition ? yes : no. Functions: sqrt, abs, min, max, sin, cos, exp, tanh, clamp(x, lo, hi). Use * for multiplication. No JavaScript.</p></details>
+        </div>
+        <div id="parameters"></div>
+        <details class="initial-settings"><summary>Initial conditions</summary><div class="two-fields"><label>Level h₀<input id="initial-h" type="number" min="0" max="5" step="0.1" value="1"></label><label>Memory z₀<input id="initial-z" type="number" min="-10" max="30" step="0.1" value="0.6"></label></div><button class="text-button" id="equilibrium-start">Start at nominal balance</button></details>
+        <div class="divider"></div><div class="panel-heading"><h2>The second branch</h2><label class="switch"><input type="checkbox" id="disturbance-enabled" checked><span>Enabled</span></label></div>
+        <div id="disturbance-parameters"></div>
+        <p class="quiet">Branch 1: c₀ = 0.6 · Target: h★ = 1<br>All values use normalized units.</p>
+        <button class="button secondary full" id="reset">Restore this experiment</button>
+        <p id="error" role="alert" hidden></p>
+      </aside>
+      <section class="stage panel" aria-label="Tank and phase portrait">
+        <div class="transport"><div class="transport-buttons"><button class="button primary" id="play">▶ Play</button><button class="button secondary" id="restart" aria-label="Rewind to start">↶ Rewind</button></div><label class="speed">Speed<select id="speed"><option value="1">1×</option><option value="2" selected>2×</option><option value="4">4×</option><option value="8">8×</option></select></label><output id="clock">t = 0.00</output></div>
+        <label class="sr-only" for="timeline">Replay time</label><input id="timeline" type="range" min="0" max="70" step="0.05" value="0">
+        <div class="jump-points"><button data-jump="start">Branch opens</button><button data-jump="end">Branch closes</button><button data-jump="crossing">Target crossing</button><button data-jump="peak">Peak level</button></div>
+        <div class="visual-pair">
+          <div class="tank-area"><div class="plot-heading"><h3>The physical system</h3><span id="branch-state" class="state-label">One branch open</span></div>
+            <svg id="tank" viewBox="0 0 440 355" role="img" aria-labelledby="tank-title tank-desc">
+              <title id="tank-title">Gravity-fed irrigation tank</title><desc id="tank-desc">The pump refills a tank. Its water level controls the drip rate through the original branch and a second temporary branch.</desc>
+              <defs><clipPath id="tank-clip"><rect x="127" y="63" width="173" height="189" rx="4"/></clipPath><pattern id="water-lines" width="15" height="12" patternUnits="userSpaceOnUse"><path d="M0 6h15" stroke="#7ed4ee" opacity=".09"/></pattern></defs>
+              <path class="pipe" d="M39 147V37H177V67"/><path id="inflow-line" class="flow-line" d="M39 147V37H177V67"/>
+              <circle class="pump" cx="39" cy="165" r="22"/><path id="pump-rotor" d="M25 165h28m-14-14v28" class="pump-rotor"/>
+              <text x="12" y="205" class="svg-label">PUMP</text><text x="12" y="225" id="pump-value" class="svg-value">0.60</text>
+              <path class="tank-outline" d="M126 62V253H301V62"/>
+              <g clip-path="url(#tank-clip)"><rect id="water" x="127" y="150" width="173" height="102" fill="#3698bd" opacity=".33"/><rect id="water-texture" x="127" y="150" width="173" height="102" fill="url(#water-lines)"/><line id="water-surface" x1="127" x2="300" y1="150" y2="150" stroke="#7ed4ee" stroke-width="2"/></g>
+              <line id="target-line" x1="112" x2="310" y1="170" y2="170" class="target-line"/><text id="target-label" x="315" y="174" class="svg-label">h★ = 1</text>
+              <text x="213" y="110" text-anchor="middle" id="level-value" class="level-value">1.00</text><text x="213" y="130" text-anchor="middle" class="svg-label">WATER LEVEL</text>
+              <path class="pipe" d="M213 254V275H150V297M213 275H333V297"/>
+              <circle cx="150" cy="287" r="7" class="valve-open"/><circle id="branch-valve" cx="333" cy="287" r="7" class="valve-closed"/>
+              <g id="drops-one" fill="#7ed4ee"><ellipse rx="3" ry="5"/><ellipse rx="3" ry="5"/><ellipse rx="3" ry="5"/></g><g id="drops-two" fill="#eab073"><ellipse rx="3" ry="5"/><ellipse rx="3" ry="5"/><ellipse rx="3" ry="5"/></g>
+              <text x="150" y="344" text-anchor="middle" class="svg-label" id="drip-one-label">Branch 1 · 0.60</text><text x="333" y="344" text-anchor="middle" class="svg-label" id="drip-two-label">Branch 2 · closed</text>
+            </svg>
+            <div class="pump-bars"><div><span>Requested</span><div class="meter"><i id="requested-bar"></i><b class="capacity-marker"></b></div><output id="requested-value">0.60</output></div><div><span>Delivered</span><div class="meter"><i id="actual-bar"></i><b class="capacity-marker"></b></div><output id="actual-value">0.60</output></div><p id="capacity-note">Pump capacity: 1.00</p></div>
+          </div>
+          <div class="phase-area"><div class="plot-heading"><h3>The state space</h3><span id="field-label">Normal-demand field</span></div><label class="local-view"><input id="local-phase" type="checkbox"> Near equilibrium</label><svg id="phase" role="img" aria-label="Phase portrait: water level h versus controller memory z"></svg><div class="phase-legend"><span><i class="swatch cyan"></i>Normal</span><span><i class="swatch amber"></i>Second branch open</span><span><i class="swatch dashed"></i>ḣ = 0</span></div><p class="quiet" id="phase-note">Arrows show the current vector field. The dot is the current state; the faint path shows the full run.</p></div>
+        </div>
+        <div class="diagnosis" aria-live="polite"><span id="diagnosis-label" class="eyebrow">AT BALANCE</span><p id="diagnosis-text"></p></div>
+      </section>
+    </div>
+    <section class="readouts" aria-label="Run measurements"><div><span>Peak after branch closes</span><strong id="peak-metric">—</strong></div><div><span>Continuous max-pump time after close</span><strong id="saturation-metric">—</strong></div><div><span>Memory at branch closing</span><strong id="memory-metric">—</strong></div></section>
+    <section class="traces panel" aria-label="Synchronized time histories"><div class="panel-heading"><div><p class="eyebrow">THE RECORDING</p><h2>Every action leaves a trace.</h2></div><span class="quiet">Click or drag a plot to move the replay cursor.</span></div><div class="trace-grid">
+      <div class="trace"><h3>01 / Water level <span>h</span></h3><svg id="level-chart" role="img" aria-label="Water level and target over time"></svg></div>
+      <div class="trace"><h3>02 / Controller memory <span>z</span></h3><svg id="memory-chart" role="img" aria-label="Controller memory over time"></svg></div>
+      <div class="trace wide"><div class="plot-heading"><h3>03 / Flow balance</h3><div class="legend" aria-label="Toggle flow series"><button data-series="uc" aria-pressed="true"><i class="swatch purple"></i>Requested u_c</button><button data-series="u" aria-pressed="true"><i class="swatch cyan"></i>Delivered u</button><button data-series="q" aria-pressed="true"><i class="swatch amber"></i>Outlet q</button></div></div><svg id="flow-chart" role="img" aria-label="Commanded inflow, actual inflow, and total outlet flow over time"></svg></div>
+      <div class="trace wide"><div class="plot-heading"><h3>04 / The error the controller remembers</h3><span class="quiet">Signed area under e(t) accumulates into z when ż = e.</span></div><svg id="error-chart" role="img" aria-label="Level error over time with positive and negative areas"></svg></div>
+    </div><div id="trace-readout" class="trace-readout" aria-live="off"></div><div class="trace-footnote"><span class="disturbance-key"></span> Shaded interval: second irrigation branch open. All plots show the complete simulated run.</div></section>
+    <details class="model-notes"><summary>Inside the model</summary><div class="notes-grid"><div><h3>Only two states</h3><p>ḣ = sat(u_c, 0, u_max) − c(t)√h<br>ż = the selected memory rule</p><p>The tank has normalized unit area. The water level stays nonnegative. There is no pump lag, thermal state, pressure compensation, or overflow model. The drawing scales to the run; its rim is not a capacity limit.</p></div><div><h3>Two parallel outlets</h3><p>Branch 1 always drains c₀√h. While branch 2 is open, it adds (c₁ − c₀)√h. Total flow is c₁√h. After it closes, total flow is c₀√h again.</p><p>We control the level, so the original branch returns to its original drip rate when h returns to h★.</p></div><div><h3>Read the phase portrait</h3><p>The vertical target line is where ż changes sign for ordinary integral control. Above z = u_max / K_I, the integral controller requests more than the pump can deliver.</p><p>The field switches when the second branch opens or closes. The state does not jump. Constant and proportional control leave z fixed; their memory coordinate is inactive.</p></div></div></details>
+    <footer><span>DRIP LAB / An experiment in actuator limits & controller memory</span><span>Runs entirely in your browser.</span></footer>
+  </main>
+</body>
+</html>

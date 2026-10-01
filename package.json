@@ -1,0 +1,14 @@
+{
+  "name": "nonlinear-dynamics-club",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "setup": "npm ci --prefix gas-the-room",
+    "build": "node scripts/build.mjs",
+    "preview": "node scripts/preview.mjs"
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  }
+}

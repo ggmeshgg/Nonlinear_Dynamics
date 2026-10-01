@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="360" viewBox="0 0 900 360">
+  <rect width="900" height="360" fill="#fbfcfe"/>
+  <g stroke="#d8dee9" stroke-width="1">
+    <line x1="80" y1="70" x2="850" y2="70"/>
+    <line x1="80" y1="180" x2="850" y2="180"/>
+    <line x1="80" y1="290" x2="850" y2="290"/>
+  </g>
+  <g stroke="#3b4252" stroke-width="2">
+    <line x1="65" y1="180" x2="858" y2="180"/>
+    <path d="M858 180 l-10 -6 v12 z" fill="#3b4252"/>
+    <line x1="368.75" y1="318" x2="368.75" y2="42"/>
+    <path d="M368.75 42 l-6 10 h12 z" fill="#3b4252"/>
+  </g>
+  <polyline points="80,70 272.5,290 465,70 657.5,290 850,70"
+            fill="none" stroke="#4263eb" stroke-width="5" stroke-linejoin="round"/>
+  <g fill="#2e3440" font-family="Libertinus Sans, Arial, sans-serif" font-size="21">
+    <text x="862" y="174">φ</text>
+    <text x="382" y="50">f(φ)</text>
+    <text x="64" y="337">-3π/2</text>
+    <text x="250" y="337">-π/2</text>
+    <text x="451" y="337">π/2</text>
+    <text x="638" y="337">3π/2</text>
+    <text x="826" y="337">5π/2</text>
+    <text x="20" y="77">π/2</text>
+    <text x="8" y="297">-π/2</text>
+  </g>
+  <g stroke="#3b4252" stroke-width="2">
+    <line x1="80" y1="174" x2="80" y2="186"/>
+    <line x1="272.5" y1="174" x2="272.5" y2="186"/>
+    <line x1="465" y1="174" x2="465" y2="186"/>
+    <line x1="657.5" y1="174" x2="657.5" y2="186"/>
+    <line x1="850" y1="174" x2="850" y2="186"/>
+    <line x1="362.75" y1="70" x2="374.75" y2="70"/>
+    <line x1="362.75" y1="290" x2="374.75" y2="290"/>
+  </g>
+</svg>

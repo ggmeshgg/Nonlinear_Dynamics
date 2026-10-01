@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="An interactive simulation of fireflies entrained by a periodic stimulus.">
+  <title>Afterglow — Firefly synchronization lab</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="ambient ambient-one" aria-hidden="true"></div>
+  <div class="ambient ambient-two" aria-hidden="true"></div>
+
+  <header class="site-header">
+    <a class="brand" href="#top" aria-label="Afterglow home">
+      <span class="brand-mark" aria-hidden="true">✦</span>
+      <span>AFTERGLOW</span>
+    </a>
+    <p>Ermentrout &amp; Rinzel model · interactive field notes</p>
+    <nav class="club-links" aria-label="Club resources">
+      <a href="../"><span aria-hidden="true">← </span>Club index</a>
+      <a href="paper/fireflies_triangle_wave_solution.pdf">Paper <span aria-label="PDF document">(PDF)</span></a>
+    </nav>
+  </header>
+
+  <main id="top">
+    <section class="hero">
+      <div class="hero-copy">
+        <p class="kicker">A synchronization playground</p>
+        <h1>Can the swarm<br><em>catch the light?</em></h1>
+        <p class="intro">Each firefly has its own natural rhythm. A periodic beacon pulls on every phase. Change the mismatch and the pull. Watch order appear—or watch it slip away.</p>
+      </div>
+      <div class="equation-card" aria-label="Model equation">
+        <span class="equation-label">The model</span>
+        <div class="equation" id="modelEquation">θ̇<sub>i</sub> = ω<sub>i</sub> + A sin(Θ − θ<sub>i</sub>)</div>
+        <div class="response-definition" id="responseDefinition">sin(φ) ranges from −1 to +1</div>
+        <div class="equation-key">
+          <span><i class="key-dot stimulus-dot"></i>Θ · beacon phase</span>
+          <span><i class="key-dot firefly-dot"></i>θ · firefly phase</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="lab-shell" aria-label="Interactive firefly simulation">
+      <aside class="control-panel">
+        <div class="panel-heading">
+          <div>
+            <p class="section-number">01 / PARAMETERS</p>
+            <h2>Shape the night</h2>
+          </div>
+          <button class="icon-button" id="resetButton" type="button" title="Reset phases" aria-label="Reset phases">↻</button>
+        </div>
+
+        <fieldset class="mode-switch">
+          <legend>Response shape</legend>
+          <div>
+            <button type="button" data-mode="sine" class="active" aria-pressed="true">
+              <span class="wave-icon sine-wave" aria-hidden="true">∿</span>
+              <span>Sine</span>
+            </button>
+            <button type="button" data-mode="triangle" aria-pressed="false">
+              <span class="wave-icon triangle-wave" aria-hidden="true">△</span>
+              <span>Triangle</span>
+            </button>
+          </div>
+          <p id="modeDescription">Smooth response · maximum pull = A</p>
+        </fieldset>
+
+        <div class="control-group">
+          <label for="omega">
+            <span>Natural rhythm <b>ω</b></span>
+            <output id="omegaOutput">1.00</output>
+          </label>
+          <input id="omega" type="range" min="0.35" max="1.65" step="0.01" value="1.00">
+          <div class="range-labels"><span>slow</span><span>rad / s</span><span>fast</span></div>
+        </div>
+
+        <div class="control-group">
+          <label for="stimulus">
+            <span>Beacon rhythm <b>Ω</b></span>
+            <output id="stimulusOutput">1.24</output>
+          </label>
+          <input id="stimulus" type="range" min="0.35" max="1.65" step="0.01" value="1.24">
+          <div class="range-labels"><span>slow</span><span>rad / s</span><span>fast</span></div>
+        </div>
+
+        <div class="control-group accent-control">
+          <label for="coupling">
+            <span>Responsiveness <b>A</b></span>
+            <output id="couplingOutput">0.38</output>
+          </label>
+          <input id="coupling" type="range" min="0" max="1.20" step="0.001" value="0.38">
+          <div class="range-labels"><span>independent</span><span>strength</span><span>strong pull</span></div>
+        </div>
+
+        <div class="control-group">
+          <label for="spread">
+            <span>Swarm variation <b>σ</b></span>
+            <output id="spreadOutput">0.10</output>
+          </label>
+          <input id="spread" type="range" min="0" max="0.35" step="0.01" value="0.10">
+          <div class="range-labels"><span>identical</span><span>frequency spread</span><span>diverse</span></div>
+        </div>
+
+        <div class="control-row">
+          <div class="compact-control">
+            <label for="population">Fireflies</label>
+            <select id="population">
+              <option value="40">40</option>
+              <option value="100" selected>100</option>
+              <option value="200">200</option>
+              <option value="400">400</option>
+            </select>
+          </div>
+          <div class="compact-control">
+            <label for="speed">Time</label>
+            <select id="speed">
+              <option value="0.5">0.5×</option>
+              <option value="1" selected>1×</option>
+              <option value="2">2×</option>
+              <option value="4">4×</option>
+            </select>
+          </div>
+        </div>
+
+        <button class="play-button" id="playButton" type="button"><span id="playIcon">Ⅱ</span><span id="playText">Pause the night</span></button>
+
+        <div class="presets">
+          <p>Quick experiments</p>
+          <div class="preset-list">
+            <button type="button" data-preset="perfect"><span>Perfect lock</span><small>Ω = ω</small></button>
+            <button type="button" data-preset="edge"><span>On the edge</span><small id="edgePresetFormula">|Ω − ω| = A</small></button>
+            <button type="button" data-preset="slip"><span>Phase slips</span><small id="slipPresetFormula">|Ω − ω| &gt; A</small></button>
+            <button type="button" data-preset="mixed"><span>Mixed swarm</span><small>wide spread</small></button>
+          </div>
+        </div>
+      </aside>
+
+      <div class="stage-panel">
+        <div class="stage-toolbar">
+          <div>
+            <p class="section-number">02 / LIVE FIELD</p>
+            <h2>The clearing</h2>
+          </div>
+          <div class="status-pill" id="statusPill"><span></span><b id="statusText">LOCKING</b></div>
+        </div>
+
+        <div class="field-wrap">
+          <canvas id="fieldCanvas" aria-label="Animated night field of flashing fireflies"></canvas>
+          <div class="beacon-label"><i></i>BEACON</div>
+          <div class="field-hint">A flash occurs each time a phase completes one turn.</div>
+        </div>
+
+        <div class="metrics" aria-live="polite">
+          <div class="metric primary">
+            <span>ENTRAINED</span>
+            <strong id="lockedMetric">—</strong>
+            <small>of the swarm can lock</small>
+          </div>
+          <div class="metric">
+            <span>MISMATCH</span>
+            <strong id="mismatchMetric">+0.24</strong>
+            <small>Ω − mean ω</small>
+          </div>
+          <div class="metric">
+            <span>COHERENCE</span>
+            <strong id="coherenceMetric">—</strong>
+            <small>phase concentration</small>
+          </div>
+          <div class="metric">
+            <span>PHASE SLIPS</span>
+            <strong id="slipMetric">0</strong>
+            <small>representative fly</small>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="instruments">
+      <div class="instrument-heading">
+        <div>
+          <p class="section-number">03 / INSTRUMENTS</p>
+          <h2>See the hidden phases</h2>
+        </div>
+        <p>The field shows the effect. These instruments show the mechanism.</p>
+      </div>
+
+      <div class="instrument-grid">
+        <article class="instrument-card phase-card">
+          <div class="card-title">
+            <div><span>A</span><h3>Phase circle</h3></div>
+            <p>One turn = one flash cycle</p>
+          </div>
+          <canvas id="phaseCanvas" aria-label="Phase circle for the beacon and fireflies"></canvas>
+          <div class="circle-legend"><span><i class="key-dot stimulus-dot"></i>beacon</span><span><i class="key-dot firefly-dot"></i>fireflies</span></div>
+          <div class="bottleneck-readout" id="bottleneckReadout">
+            <span class="bottleneck-signal"><i></i><b id="bottleneckState">BOTTLENECK ZONE</b></span>
+            <strong id="bottleneckPhase">φ = π/2</strong>
+            <small id="bottleneckDrift">minimum drift · 0.00 rad/s</small>
+          </div>
+        </article>
+
+        <article class="instrument-card timeline-card">
+          <div class="card-title">
+            <div><span>B</span><h3>Flash timeline</h3></div>
+            <p>Vertical columns reveal synchrony</p>
+          </div>
+          <canvas id="timelineCanvas" aria-label="Timeline of recent firefly flashes"></canvas>
+          <div class="timeline-axis"><span>12 seconds ago</span><span>now</span></div>
+        </article>
+      </div>
+    </section>
+
+    <section class="threshold-section">
+      <div class="threshold-copy">
+        <p class="section-number">04 / THE TEST</p>
+        <h2>One inequality decides who can keep up.</h2>
+        <p>A firefly locks when the beacon’s pull is at least as large as their frequency mismatch.</p>
+        <div class="threshold-equation" id="thresholdEquation">| Ω − ω<sub>i</sub> | <span>≤</span> A</div>
+        <p class="verdict" id="verdictText">The mean firefly can synchronize.</p>
+      </div>
+      <div class="threshold-meter" aria-label="Locking threshold meter">
+        <div class="meter-labels"><span>slower fireflies</span><b>LOCKING BAND</b><span>faster fireflies</span></div>
+        <div class="meter-track" id="meterTrack">
+          <div class="meter-band" id="meterBand"></div>
+          <div class="meter-natural" id="naturalMarker"><span>mean ω</span></div>
+          <div class="meter-stimulus" id="stimulusMarker"><span>Ω</span></div>
+        </div>
+        <div class="meter-scale"><span>0.35</span><span>frequency</span><span>1.65</span></div>
+      </div>
+    </section>
+
+    <section class="notes">
+      <p class="section-number">FIELD NOTES</p>
+      <div class="notes-grid">
+        <article><span>01</span><h3>Locked is not identical</h3><p>A locked firefly runs at the beacon frequency, but it can follow with a constant phase lag.</p></article>
+        <article><span>02</span><h3>Near the edge</h3><p>Outside the locking band, long almost-locked pauses end in sudden full-cycle phase slips.</p></article>
+        <article><span>03</span><h3>This is external entrainment</h3><p>Every firefly follows one beacon. Mutual firefly-to-firefly coupling requires a different model.</p></article>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <span>AFTERGLOW / 2026</span>
+    <span>Client-side simulation · no data leaves this page</span>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
