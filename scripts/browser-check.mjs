@@ -17,6 +17,11 @@ try {
   assert.ok(await page.locator('.katex').count()>30);
   await mkdir('test-results',{recursive:true});
   await page.screenshot({path:'test-results/desktop.png'});
+  for(const [id,name] of [[5,'resonance'],[6,'time'],[7,'phase'],[9,'trace']]) {
+    const card=page.locator(`#section-${id} .plot-card`);
+    await card.scrollIntoViewIfNeeded();
+    await card.screenshot({path:`test-results/${name}.png`});
+  }
   await page.getByRole('button',{name:/Открыть интерактивную модель/}).click();
   await page.screenshot({path:'test-results/model.png'});
   const fill = async (id,value) => { await page.locator(id).fill(String(value)); await page.locator(id).blur(); };
