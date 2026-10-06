@@ -24,10 +24,14 @@ jobs:
         with:
           node-version: '24'
           cache: npm
-          cache-dependency-path: gas-the-room/package-lock.json
+          cache-dependency-path: |
+            gas-the-room/package-lock.json
+            rlc-interactive-lecture/package-lock.json
       - uses: actions/configure-pages@v5
-      - name: Install gas simulation dependencies
+      - name: Install simulation dependencies
         run: npm run setup
+      - name: Test RLC model
+        run: npm --prefix rlc-interactive-lecture test
       - name: Build simulations and club catalog
         run: npm run build
       - uses: actions/upload-pages-artifact@v3

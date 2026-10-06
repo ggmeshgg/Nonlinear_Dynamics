@@ -10,19 +10,23 @@ if (!base.startsWith('/') || base.includes('..')) {
   throw new Error('BASE_PATH must be an absolute URL path, such as /Nonlinear_Dynamics/.');
 }
 
-const gasBuild = spawnSync('npm', ['run', 'build', '--', '--base', `${base}gas-the-room/`], {
-  cwd: resolve(root, 'gas-the-room'),
-  stdio: 'inherit',
-});
-if (gasBuild.error) throw gasBuild.error;
-if (gasBuild.status !== 0) process.exit(gasBuild.status || 1);
+for (const project of ['gas-the-room', 'rlc-interactive-lecture']) {
+  const build = spawnSync('npm', ['run', 'build', '--', '--base', `${base}${project}/`], {
+    cwd: resolve(root, project),
+    stdio: 'inherit',
+  });
+  if (build.error) throw build.error;
+  if (build.status !== 0) process.exit(build.status || 1);
+}
 
 await rm(output, { recursive: true, force: true });
 await mkdir(output, { recursive: true });
 for (const file of ['index.html', 'styles.css', 'favicon.svg']) {
   await cp(resolve(root, file), resolve(output, file));
 }
-await cp(resolve(root, 'gas-the-room/dist'), resolve(output, 'gas-the-room'), { recursive: true });
+for (const project of ['gas-the-room', 'rlc-interactive-lecture']) {
+  await cp(resolve(root, `${project}/dist`), resolve(output, project), { recursive: true });
+}
 await cp(resolve(root, 'gas-the-room/paper'), resolve(output, 'gas-the-room/paper'), { recursive: true });
 
 for (const project of ['fireflies', 'liquid-level']) {

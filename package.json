@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "setup": "npm ci --prefix gas-the-room",
+    "setup": "npm ci --prefix gas-the-room && npm ci --prefix rlc-interactive-lecture",
     "build": "node scripts/build.mjs",
     "preview": "node scripts/preview.mjs"
   },

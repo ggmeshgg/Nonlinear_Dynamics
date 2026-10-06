@@ -9,6 +9,7 @@ Chaos*: interactive simulations, worked solutions, and papers.
 | --- | --- | --- |
 | Fireflies | [Interactive model](fireflies/) | [Triangle-wave solution](fireflies/paper/fireflies_triangle_wave_solution.pdf) |
 | Gas the room | [Evacuation sandbox](gas-the-room/) | [Model and analysis](gas-the-room/paper/main-typst.pdf) |
+| RLC circuit (Russian) | [Interactive lecture](rlc-interactive-lecture/) | [Source notes](rlc-interactive-lecture/docs/source-notes.md) |
 | Liquid level | [Interactive model](liquid-level/) | [Local regime map](liquid-level/paper/local-regime-map.pdf) |
 
 ## Local build
@@ -24,9 +25,10 @@ npm run preview
 Open `http://127.0.0.1:4173/Nonlinear_Dynamics/`. The preview uses the same nested
 URL as GitHub Pages, so simulation assets can be checked before publishing.
 
-The build compiles the TypeScript/Vite gas simulation with base
-`/Nonlinear_Dynamics/gas-the-room/`, then assembles `dist/` with the root catalog,
-the two standalone HTML projects, and their papers. `dist/` and dependencies are
+The build compiles the gas simulation and RLC lecture with base paths
+`/Nonlinear_Dynamics/gas-the-room/` and `/Nonlinear_Dynamics/rlc-interactive-lecture/`,
+then assembles `dist/` with the root catalog,
+the standalone HTML projects and the RLC lecture, and their papers. `dist/` and dependencies are
 ignored by Git. For another host path, set `BASE_PATH` for **both** build and
 preview (for example, `BASE_PATH=/ npm run build`).
 
@@ -54,3 +56,8 @@ add` **without squashing**, at source commit
 `feebc15aac04a2dd89cf3d05e9812cd8967d7971`. Its original commits remain part of
 this repository's Git history, and its source, assets, and paper live together
 under `gas-the-room/`. The original repository was not changed by the import.
+
+`rlc-interactive-lecture/` was imported with its complete history from
+[norff21-hash/rlc-interactive-lecture](https://github.com/norff21-hash/rlc-interactive-lecture)
+at `c351f5eb27691f6f397e96daa36c1803b1e4b58a`. The club build sets its nested
+Pages base path; the lecture includes a link back to the club index.
