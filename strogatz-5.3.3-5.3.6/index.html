@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Интерактивный разбор задач Строгаца 5.3.3–5.3.6 о линейных моделях любовной динамики.">
+  <title>Строгац · Любовная динамика 5.3.3–5.3.6</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="hero" id="top">
+    <nav class="nav" aria-label="Навигация по задачам">
+      <a class="brand" href="#top"><span>R↔J</span> Линейная любовь</a>
+      <div class="nav-links">
+        <a class="club-home" href="../">← Клуб</a>
+        <a href="#memo">Памятка</a><a href="#p533">5.3.3</a><a href="#p534">5.3.4</a><a href="#p535">5.3.5</a><a href="#p536">5.3.6</a>
+      </div>
+    </nav>
+    <div class="hero-grid">
+      <div>
+        <p class="eyebrow">Строгац · глава 5 · линейные системы</p>
+        <h1>Четыре истории<br><em>о чувствах и фазовых портретах</em></h1>
+        <p class="lead">Единый разбор задач 5.3.3–5.3.6: от матрицы и собственных направлений — к тому, что происходит с Ромео и Джульеттой.</p>
+        <a class="button" href="#memo">Начать разбор <span>↓</span></a>
+      </div>
+      <div class="hero-card" aria-label="Легенда переменных">
+        <div class="couple"><span>R</span><i>↔</i><span>J</span></div>
+        <div class="legend-row"><b class="plus">+</b><span><strong>R, J &gt; 0</strong> — любовь</span></div>
+        <div class="legend-row"><b class="minus">−</b><span><strong>R, J &lt; 0</strong> — ненависть</span></div>
+        <div class="legend-row"><b class="zero">0</b><span><strong>R = 0 или J = 0</strong> — безразличие</span></div>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <section class="memo section" id="memo">
+      <div class="section-title"><span>00</span><div><p class="kicker">Перед стартом</p><h2>Короткая памятка по 2D‑системам</h2></div></div>
+      <p class="section-intro">Для <span class="formula">ẋ = Ax</span> достаточно найти след <span class="formula">τ</span>, определитель <span class="formula">Δ</span> и собственные значения. Здесь все матрицы устроены так, что ответ получается почти сразу.</p>
+      <div class="memo-grid">
+        <article><span class="badge saddle">седло</span><h3>Δ &lt; 0</h3><p>Собственные значения разных знаков. Одно направление притягивает, другое отталкивает.</p></article>
+        <article><span class="badge center">центр</span><h3>τ = 0, Δ &gt; 0</h3><p>Чисто мнимые значения. Замкнутые орбиты и незатухающие колебания.</p></article>
+        <article><span class="badge stable">устойчивый узел</span><h3>λ₁, λ₂ &lt; 0</h3><p>Все траектории стремятся к началу координат: чувства затухают.</p></article>
+        <article><span class="badge unstable">неустойчивый узел</span><h3>λ₁, λ₂ &gt; 0</h3><p>Все ненулевые траектории уходят от начала: чувства усиливаются.</p></article>
+      </div>
+      <div class="howto"><strong>Как читать графики</strong><span>Горизонталь — чувства Ромео <b>R</b>, вертикаль — чувства Джульетты <b>J</b>. Стрелки показывают мгновенное движение, цветные линии — несколько историй с разными начальными условиями. Меняйте параметры: подпись режима и портрет обновятся.</span></div>
+    </section>
+
+    <section class="problem section" id="p533" data-problem="533">
+      <div class="section-title"><span>01</span><div><p class="kicker">5.3.3 · Out of touch with their own feelings</p><h2>Не в ладу с собственными чувствами</h2></div></div>
+      <div class="problem-grid">
+        <div class="theory">
+          <div class="system"><span>Ṙ = aJ</span><span>Ĵ = bR</span></div>
+          <p>Оба реагируют только на другого. Быстрый трюк — ещё раз продифференцировать:</p>
+          <div class="key"><small>Ключевой ход</small><strong>R̈ = abR</strong><span>Знак произведения <i>ab</i> решает всё.</span></div>
+          <div class="case-list">
+            <div><b>ab &gt; 0</b><span>λ = ±√ab → <em>седло</em>. При a,b &gt; 0 взаимность разгоняет любовь или ненависть; при a,b &lt; 0 усиливается противоположность чувств.</span></div>
+            <div><b>ab &lt; 0</b><span>λ = ±i√(−ab) → <em>центр</em>. Роли любви и ненависти циклически меняются; амплитуда не затухает.</span></div>
+            <div><b>ab = 0</b><span>Вырожденный случай: один партнёр не реагирует, другой меняется линейно или остаётся неподвижным.</span></div>
+          </div>
+          <details><summary>Инвариант и геометрия</summary><p><span class="formula">bR² − aJ² = const</span>. При <span class="formula">ab&lt;0</span> это эллипсы; при <span class="formula">ab&gt;0</span> — гиперболы. Собственные прямые седла: <span class="formula">J = ±√(b/a)R</span>.</p></details>
+        </div>
+        <div class="lab">
+          <div class="lab-head"><div><p>Интерактивный портрет</p><h3 class="mode-title">—</h3></div><span class="mode-pill">—</span></div>
+          <canvas class="phase" width="720" height="540" aria-label="Фазовый портрет задачи 5.3.3"></canvas>
+          <div class="controls">
+            <label>a <output class="out-a">1.0</output><input class="param-a" type="range" min="-2" max="2" step="0.1" value="1"></label>
+            <label>b <output class="out-b">1.0</output><input class="param-b" type="range" min="-2" max="2" step="0.1" value="1"></label>
+          </div>
+          <div class="presets"><button data-a="1" data-b="1">ab &gt; 0</button><button data-a="1" data-b="-1">ab &lt; 0</button><button data-a="1" data-b="0">ab = 0</button></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="problem section warm" id="p534" data-problem="534">
+      <div class="section-title"><span>02</span><div><p class="kicker">5.3.4 · Fire and water</p><h2>Огонь и вода</h2></div></div>
+      <div class="problem-grid">
+        <div class="theory">
+          <div class="system"><span>Ṙ = aR + bJ</span><span>Ĵ = −bR − aJ</span></div>
+          <p>След матрицы равен нулю, а её квадрат особенно прост:</p>
+          <div class="key"><small>Ключевой ход</small><strong>A² = (a² − b²)I</strong><span>Поэтому λ² = a² − b².</span></div>
+          <div class="case-list">
+            <div><b>|a| &gt; |b|</b><span>Действительная пара ±√(a²−b²) → <em>седло</em>. Собственные склонности сильнее реакции друг на друга.</span></div>
+            <div><b>|a| &lt; |b|</b><span>Мнимая пара ±i√(b²−a²) → <em>центр</em>. Противоположные реакции создают бесконечный цикл.</span></div>
+            <div><b>|a| = |b|</b><span><em>Вырождение</em>: A²=0. Есть целая прямая равновесий, остальные траектории — параллельные прямые с линейным движением.</span></div>
+          </div>
+          <div class="interpretation"><strong>Притягиваются ли противоположности?</strong><p>Иногда они не сходятся к счастливому равновесию, а вечно кружат вокруг безразличия. Центр здесь нейтрален: ни сближения, ни затухания.</p></div>
+        </div>
+        <div class="lab">
+          <div class="lab-head"><div><p>Интерактивный портрет</p><h3 class="mode-title">—</h3></div><span class="mode-pill">—</span></div>
+          <canvas class="phase" width="720" height="540" aria-label="Фазовый портрет задачи 5.3.4"></canvas>
+          <div class="controls">
+            <label>a <output class="out-a">1.5</output><input class="param-a" type="range" min="-2" max="2" step="0.1" value="1.5"></label>
+            <label>b <output class="out-b">0.7</output><input class="param-b" type="range" min="-2" max="2" step="0.1" value="0.7"></label>
+          </div>
+          <div class="presets"><button data-a="1.5" data-b="0.7">|a| &gt; |b|</button><button data-a="0.5" data-b="1.4">|a| &lt; |b|</button><button data-a="1" data-b="1">|a| = |b|</button></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="problem section" id="p535" data-problem="535">
+      <div class="section-title"><span>03</span><div><p class="kicker">5.3.5 · Peas in a pod</p><h2>Два сапога — пара</h2></div></div>
+      <div class="problem-grid">
+        <div class="theory">
+          <div class="system"><span>Ṙ = aR + bJ</span><span>Ĵ = bR + aJ</span></div>
+          <p>Романтические клоны распадаются на две независимые «истории»:</p>
+          <div class="key two"><small>Замена координат</small><strong>u = R + J, u̇ = (a+b)u</strong><strong>v = R − J, v̇ = (a−b)v</strong></div>
+          <div class="directions"><div><span class="line-icon same"></span><p><b>(1, 1) · вместе</b><br>R = J, оба любят или ненавидят одинаково. Темп λ₊ = a+b.</p></div><div><span class="line-icon opposite"></span><p><b>(1, −1) · врозь</b><br>R = −J, один любит, другой ненавидит. Темп λ₋ = a−b.</p></div></div>
+          <div class="case-list compact">
+            <div><b>a &lt; −|b|</b><span>Оба λ отрицательны → <em>устойчивый узел</em>: чувства сходят на нет.</span></div>
+            <div><b>a &gt; |b|</b><span>Оба λ положительны → <em>неустойчивый узел</em>: любая эмоция разрастается.</span></div>
+            <div><b>|a| &lt; |b|</b><span>Знаки различны → <em>седло</em>: одно сочетание затухает, другое усиливается.</span></div>
+          </div>
+          <details><summary>Что на границах?</summary><p>При <span class="formula">a=±b</span> одно собственное значение равно нулю: соответствующая диагональ целиком состоит из неподвижных точек.</p></details>
+        </div>
+        <div class="lab">
+          <div class="lab-head"><div><p>Интерактивный портрет</p><h3 class="mode-title">—</h3></div><span class="mode-pill">—</span></div>
+          <canvas class="phase" width="720" height="540" aria-label="Фазовый портрет задачи 5.3.5"></canvas>
+          <div class="controls">
+            <label>a <output class="out-a">−1.4</output><input class="param-a" type="range" min="-2" max="2" step="0.1" value="-1.4"></label>
+            <label>b <output class="out-b">0.5</output><input class="param-b" type="range" min="-2" max="2" step="0.1" value="0.5"></label>
+          </div>
+          <div class="presets"><button data-a="-1.4" data-b="0.5">устойчивый узел</button><button data-a="1.4" data-b="0.5">неустойчивый узел</button><button data-a="0.3" data-b="1.2">седло</button></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="problem section warm" id="p536" data-problem="536">
+      <div class="section-title"><span>04</span><div><p class="kicker">5.3.6 · Romeo the robot</p><h2>Ромео‑робот</h2></div></div>
+      <div class="problem-grid">
+        <div class="theory">
+          <div class="system"><span>Ṙ = 0</span><span>Ĵ = aR + bJ</span></div>
+          <p>Чувство Ромео заморожено: <span class="formula">R(t)=R₀</span>. Для Джульетты остаётся одно линейное уравнение.</p>
+          <div class="key two"><small>Явное решение</small><strong>b ≠ 0: J(t) = (J₀ + aR₀/b)eᵇᵗ − aR₀/b</strong><strong>b = 0: J(t) = J₀ + aR₀t</strong></div>
+          <div class="case-list">
+            <div><b>b &lt; 0</b><span>Джульетта приходит к <em>J* = −aR₀/b</em>. Если R₀&gt;0, она в итоге любит при a&gt;0 и ненавидит при a&lt;0.</span></div>
+            <div><b>b &gt; 0</b><span>Равновесие неустойчиво. Почти любое отклонение экспоненциально уносит J к любви или ненависти.</span></div>
+            <div><b>b = 0</b><span>При aR₀≠0 чувства Джульетты меняются линейно; при aR₀=0 — остаются постоянными.</span></div>
+          </div>
+          <div class="interpretation"><strong>Линия неподвижных точек</strong><p>При <span class="formula">b≠0</span>: <span class="formula">aR+bJ=0</span>. При <span class="formula">b=0, a≠0</span>: <span class="formula">R=0</span>. Если a=b=0, неподвижна вся плоскость.</p></div>
+        </div>
+        <div class="lab">
+          <div class="lab-head"><div><p>Интерактивный портрет</p><h3 class="mode-title">—</h3></div><span class="mode-pill">—</span></div>
+          <canvas class="phase" width="720" height="540" aria-label="Фазовый портрет задачи 5.3.6"></canvas>
+          <div class="controls">
+            <label>a <output class="out-a">1.0</output><input class="param-a" type="range" min="-2" max="2" step="0.1" value="1"></label>
+            <label>b <output class="out-b">−1.0</output><input class="param-b" type="range" min="-2" max="2" step="0.1" value="-1"></label>
+          </div>
+          <div class="presets"><button data-a="1" data-b="-1">b &lt; 0</button><button data-a="1" data-b="1">b &gt; 0</button><button data-a="1" data-b="0">b = 0</button></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="summary section">
+      <p class="kicker">Итоговая карта</p><h2>Один взгляд — четыре механизма</h2>
+      <div class="summary-grid">
+        <a href="#p533"><b>5.3.3</b><span>знак <i>ab</i></span><small>седло ↔ центр</small></a>
+        <a href="#p534"><b>5.3.4</b><span>сравнить <i>|a|</i> и <i>|b|</i></span><small>седло ↔ центр ↔ вырождение</small></a>
+        <a href="#p535"><b>5.3.5</b><span>координаты <i>u, v</i></span><small>узлы ↔ седло</small></a>
+        <a href="#p536"><b>5.3.6</b><span><i>R</i> постоянно</span><small>линия равновесий</small></a>
+      </div>
+    </section>
+  </main>
+  <footer><span>Строгац · Нелинейная динамика и хаос</span><a href="#top">Наверх ↑</a></footer>
+  <script src="app.js"></script>
+</body>
+</html>

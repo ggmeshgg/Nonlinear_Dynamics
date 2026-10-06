@@ -29,7 +29,7 @@ for (const project of ['gas-the-room', 'rlc-interactive-lecture']) {
 }
 await cp(resolve(root, 'gas-the-room/paper'), resolve(output, 'gas-the-room/paper'), { recursive: true });
 
-for (const project of ['fireflies', 'liquid-level']) {
+for (const project of ['fireflies', 'liquid-level', 'strogatz-5.3.3-5.3.6']) {
   const source = resolve(root, project);
   try {
     await access(source);

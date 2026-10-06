@@ -7,6 +7,7 @@ Chaos*: interactive simulations, worked solutions, and papers.
 
 | Project | Simulation | Paper |
 | --- | --- | --- |
+| Strogatz 5.3.3–5.3.6 (Kirill, Russian) | [Presentation and phase portraits](strogatz-5.3.3-5.3.6/) | Solutions included on the page |
 | Fireflies | [Interactive model](fireflies/) | [Triangle-wave solution](fireflies/paper/fireflies_triangle_wave_solution.pdf) |
 | Gas the room | [Evacuation sandbox](gas-the-room/) | [Model and analysis](gas-the-room/paper/main-typst.pdf) |
 | RLC circuit (Russian) | [Interactive lecture](rlc-interactive-lecture/) | [Source notes](rlc-interactive-lecture/docs/source-notes.md) |
