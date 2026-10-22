@@ -1,0 +1,8 @@
+{
+  "name": "bagels-trust-lab",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "test": "node tests/model.test.cjs"
+  }
+}
