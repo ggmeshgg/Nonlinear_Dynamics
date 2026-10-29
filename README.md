@@ -11,6 +11,7 @@ Chaos*: interactive simulations, worked solutions, and papers.
 | Strogatz 6.4.9 (Russian) | [National economy: solution and phase portraits](strogatz-6.4.9/) | Worked solution included on the page |
 | Strogatz 6.4.11 (Russian) | [Political polarization: solution and phase portraits](strogatz-6.4.11/) | Worked solution included on the page |
 | Bagels Trust Lab (Russian) | [Trust, honesty, and phase portraits](bagels-trust-lab/) | [Companion report](bagels-trust-lab/paper/report.pdf) |
+| Cognitive Virus Lab (Russian) | [Autonomy, AI collaboration, and hysteresis](cognitive-virus-lab/) | Model and analysis included on the page |
 | Fireflies | [Interactive model](fireflies/) | [Triangle-wave solution](fireflies/paper/fireflies_triangle_wave_solution.pdf) |
 | Gas the room | [Evacuation sandbox](gas-the-room/) | [Model and analysis](gas-the-room/paper/main-typst.pdf) |
 | RLC circuit (Russian) | [Interactive lecture](rlc-interactive-lecture/) | [Source notes](rlc-interactive-lecture/docs/source-notes.md) |

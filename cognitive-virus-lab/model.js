@@ -1,0 +1,13 @@
+(function(root){'use strict';
+const defaults={lambda:.45,rho:.1,kappa:.4,mu:.2,sigma:.1,u0:.75,c0:.05,gc:.5,gd:.1};
+function rhs(u,c,p){const f=p.rho-p.lambda*u+p.kappa*u*u;return [c*f,p.sigma*(1-u)-c*(f+p.mu+p.sigma)];}
+function step(u,c,h,p){const a=rhs(u,c,p),b=rhs(u+h*a[0]/2,c+h*a[1]/2,p),e=rhs(u+h*b[0]/2,c+h*b[1]/2,p),f=rhs(u+h*e[0],c+h*e[1],p);return [u+h*(a[0]+2*b[0]+2*e[0]+f[0])/6,c+h*(a[1]+2*b[1]+2*e[1]+f[1])/6];}
+function trajectory(p,u=p.u0,c=p.c0,T=800,interval=1){let out=[[0,u,c,1-u-c]],t=0;const n=Math.ceil(interval/.2),h=interval/n;for(let i=1;i<=Math.round(T/interval);i++){for(let j=0;j<n;j++)[u,c]=step(u,c,h,p);t=i*interval;out.push([t,u,c,1-u-c]);}return out;}
+function equilibrium(u,p,type){return {u,c:p.sigma*(1-u)/(p.mu+p.sigma),d:p.mu*(1-u)/(p.mu+p.sigma),type};}
+function structure(p){const tc=p.rho+p.kappa,sn=2*Math.sqrt(p.kappa*p.rho),delta=p.lambda*p.lambda-4*p.kappa*p.rho,A=tc-p.lambda;const points=[{u:1,c:0,d:0,type:A>1e-9?'stable':A< -1e-9?'saddle':'critical',name:'EU'}];let roots=[];if(delta>=-1e-10){const q=Math.sqrt(Math.max(0,delta));roots=[(p.lambda-q)/(2*p.kappa),(p.lambda+q)/(2*p.kappa)];roots.forEach((u,i)=>{if(u>=-1e-9&&u<=1+1e-9&&Math.abs(u-1)>1e-8&&(i===0||Math.abs(u-roots[0])>1e-8))points.push({...equilibrium(Math.min(1,Math.max(0,u)),p,q<1e-8?'critical':i===0?'stable':'saddle'),name:i===0?'E−':'E+'});});}const bistable=p.kappa>p.rho&&p.lambda>sn+1e-8&&p.lambda<tc-1e-8;return {tc,sn,points,roots,A,bistable,critical:Math.abs(p.lambda-tc)<1e-8||(p.kappa>p.rho&&Math.abs(p.lambda-sn)<1e-8)};}
+function destination(p,u=p.u0,c=p.c0){const s=structure(p);if(u===1&&c===0)return {...s.points[0],exact:true};if(s.critical)return null;if(s.bistable){const saddle=s.points.find(x=>x.name==='E+');if(Math.abs(u-saddle.u)<1e-7)return saddle;return u>saddle.u?s.points[0]:s.points.find(x=>x.name==='E−');}return s.points.find(x=>x.type==='stable');}
+function competence(e,p){return e.u+p.gc*e.c+p.gd*e.d;}
+function sweep(p){const s=structure(p),lo=Math.max(.005,Math.min(s.sn,s.tc)*.6),hi=s.tc*1.32,N=90,paths=[[],[]];let u=.99,c=.009;function evolve(l){const pp={...p,lambda:l};if(1-u<1e-6){u=1-1e-4;c=1e-4;}for(let j=0;j<800;j++)[u,c]=step(u,c,.2,pp);return u;}
+for(let i=0;i<=N;i++){const l=lo+(hi-lo)*i/N;paths[0].push([l,evolve(l)]);}for(let i=N;i>=0;i--){const l=lo+(hi-lo)*i/N;paths[1].push([l,evolve(l)]);}return paths;}
+const API={defaults,rhs,step,trajectory,structure,destination,equilibrium,competence,sweep};if(typeof module!=='undefined'&&module.exports)module.exports=API;root.CognitiveModel=API;
+})(typeof window!=='undefined'?window:globalThis);
