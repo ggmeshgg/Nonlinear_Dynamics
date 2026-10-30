@@ -43,7 +43,21 @@ body {
   display: grid; grid-template-columns: 370px 1fr; overflow: hidden;
 }
 aside { overflow-y: auto; overflow-x: hidden; min-width: 0; padding: 14px 16px 24px; border-right: 1px solid var(--line); background: var(--panel); }
-main { position: relative; min-width: 0; min-height: 0; }
+main { position: relative; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+#plotwrap { position: relative; flex: 1; min-height: 0; }
+#bifpanel { height: 40%; min-height: 220px; border-top: 1px solid var(--line); display: flex; flex-direction: column; background: var(--canvas); }
+#bifpanel[hidden] { display: none; }
+.bifbar { display: flex; align-items: center; gap: 12px; padding: 5px 10px; font-size: 13px; border-bottom: 1px solid var(--line); background: var(--panel); flex-wrap: wrap; }
+.bifbar label { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); }
+.bifbar select { padding: 1px 4px; }
+.bifbar .sp { flex: 1; }
+#bifstatus { color: var(--muted); font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 12px; }
+.biflegend { color: var(--muted); font-size: 12px; display: inline-flex; gap: 10px; align-items: center; }
+.biflegend i { display: inline-block; width: 18px; height: 0; border-top: 2px solid; vertical-align: middle; margin-right: 3px; }
+#bif { flex: 1; width: 100%; min-height: 0; display: block; touch-action: none; cursor: ew-resize; }
+button.mini { font-size: 12px; padding: 1px 7px; text-transform: none; letter-spacing: 0; }
+button.mini kbd { font: 11px ui-monospace, "SF Mono", Menlo, Consolas, monospace; color: var(--muted); }
+button.mini.on { border-color: var(--accent); color: var(--accent); }
 #plot { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; cursor: crosshair; display: block; }
 h1 { font-size: 16px; font-weight: 600; margin: 0; letter-spacing: .01em; }
 .top { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
@@ -77,7 +91,7 @@ math-field.locked { border-style: dashed; color: var(--muted); }
 .msg:empty { display: none; }
 .vars { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); margin-bottom: 8px; flex-wrap: wrap; }
 .vars input[type=text] { width: 64px; padding: 2px 6px; }
-.vars label { display: flex; align-items: center; gap: 4px; cursor: pointer; margin-left: auto; }
+.vars select { padding: 2px 4px; }
 .param { margin-bottom: 8px; }
 .param .row1 { display: flex; align-items: baseline; gap: 6px; }
 .param .name { font-family: "Times New Roman", serif; font-style: italic; font-size: 16px; }
@@ -117,9 +131,10 @@ table.fps tr:hover td { background: var(--chip); }
 #tip .num { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 12px; }
 #toast { position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%); background: var(--ink); color: var(--bg); padding: 5px 12px; border-radius: 6px; font-size: 13px; opacity: 0; transition: opacity .2s; pointer-events: none; }
 @media (max-width: 760px) {
-  body { grid-template-columns: 1fr; grid-template-rows: 62vh auto; overflow: auto; height: auto; }
+  body { grid-template-columns: 1fr; grid-template-rows: 62vh auto; overflow-y: auto; overflow-x: hidden; height: auto; }
   main { grid-row: 1; height: 62vh; }
-  aside { grid-row: 2; border-right: 0; border-top: 1px solid var(--line); overflow: visible; }
+  body.bif-on main { height: 92vh; }
+  aside { grid-row: 2; border-right: 0; border-top: 1px solid var(--line); overflow: visible; overflow-x: clip; }
   #legend { font-size: 11px; gap: 8px; }
 }
 </style>
@@ -135,8 +150,9 @@ table.fps tr:hover td { background: var(--chip); }
 
   <section>
     <div class="vars">
-      variables <input id="v0" type="text" value="x" spellcheck="false"> <input id="v1" type="text" value="y" spellcheck="false">
-      <label title="Enter a single second-order equation; the first variable's derivative is the second variable"><input id="so" type="checkbox"> 2nd-order</label>
+      <select id="mode" title="Form of the equations"><option value="xy">ẋ, ẏ</option><option value="so">ẍ (2nd order)</option><option value="polar">ṙ, θ̇ (polar)</option></select>
+      <span id="varbox">variables <input id="v0" type="text" value="x" spellcheck="false"> <input id="v1" type="text" value="y" spellcheck="false"></span>
+      <span id="polarnote" hidden>use r and θ; plotted in the x, y plane</span>
     </div>
     <div class="eq">
       <div class="lhs" id="lf"></div><div class="mfslot" id="mf"></div><div class="msg" id="ef"></div>
@@ -146,7 +162,7 @@ table.fps tr:hover td { background: var(--chip); }
   </section>
 
   <section>
-    <div class="lbl">Parameters</div>
+    <div class="lbl">Parameters <span class="sp"></span><button id="bifbtn" class="mini" title="Sweep a parameter: fixed-point branches, limit cycles, bifurcation points">bifurcation diagram <kbd>B</kbd></button></div>
     <div id="params"></div>
   </section>
 
@@ -181,11 +197,26 @@ table.fps tr:hover td { background: var(--chip); }
   </section>
 </aside>
 <main>
-  <canvas id="plot"></canvas>
-  <div id="legend"></div>
-  <div id="coords"></div>
-  <div id="tip"></div>
-  <div id="toast"></div>
+  <div id="plotwrap">
+    <canvas id="plot"></canvas>
+    <div id="legend"></div>
+    <div id="coords"></div>
+    <div id="tip"></div>
+    <div id="toast"></div>
+  </div>
+  <div id="bifpanel" hidden>
+    <div class="bifbar">
+      <b>Bifurcation diagram</b>
+      <label>sweep <select id="bifp"></select></label>
+      <label>plot <select id="bifc"><option value="x">x</option><option value="y">y</option><option value="r">r = √(x²+y²)</option></select></label>
+      <label><input type="checkbox" id="bifcyc" checked> limit cycles</label>
+      <span id="bifstatus"></span>
+      <span class="sp"></span>
+      <span class="biflegend" id="biflegend"></span>
+      <button id="bifclose" class="mini" title="Close (B)">×</button>
+    </div>
+    <canvas id="bif"></canvas>
+  </div>
 </main>
 
 <script type="module">
@@ -368,7 +399,7 @@ const LAYERS = [
   { k: 'o', name: 'sample orbits' },
 ];
 const state = {
-  f: '', g: '', E: '', vars: ['x', 'y'], so: false,
+  f: '', g: '', E: '', vars: ['x', 'y'], so: false, polar: false,
   params: {},          // name → {v, min, max}
   seeds: [],           // user trajectories [x, y]
   layers: { v: true, n: true, m: true, e: true, o: true },
@@ -384,11 +415,16 @@ const PRESETS = [
   { name: 'Pendulum (damping b)', vars: ['theta', 'v'], so: true, g: '-\\sin\\theta-bv', params: { b: [0, 0, 1] }, r: 3.6 },
   { name: 'Double-well oscillator', so: true, g: 'x-x^3-by', params: { b: [0, 0, 1] }, r: 1.9 },
   { name: 'Van der Pol oscillator', so: true, g: '\\mu(1-x^2)y-x', params: { mu: [1, 0, 5] }, r: 4 },
-  { name: 'Hopf bifurcation (supercritical)', f: '\\mu x-y-x(x^2+y^2)', g: 'x+\\mu y-y(x^2+y^2)', params: { mu: [0.2, -1, 1] }, r: 1.4 },
-  { name: 'Saddle-node bifurcation', f: '\\mu-x^2', g: '-y', params: { mu: [0.5, -1, 1] }, r: 1.8 },
+  { name: 'Hopf bifurcation (supercritical)', f: '\\mu x-y-x(x^2+y^2)', g: 'x+\\mu y-y(x^2+y^2)', params: { mu: [0.2, -1, 1] }, r: 1.4, bif: 'mu' },
+  { name: 'Saddle-node bifurcation', f: '\\mu-x^2', g: '-y', params: { mu: [0.5, -1, 1] }, r: 1.8, bif: 'mu' },
+  { name: 'Pitchfork bifurcation', f: '\\mu x-x^3', g: '-y', params: { mu: [0.5, -1, 1] }, r: 1.6, bif: 'mu' },
+  { name: 'Transcritical bifurcation', f: '\\mu x-x^2', g: '-y', params: { mu: [0.5, -1, 1] }, r: 1.6, bif: 'mu' },
   { name: 'Glycolytic oscillator', f: '-x+ay+x^2y', g: 'b-ay-x^2y', params: { a: [0.08, 0, 0.2], b: [0.6, 0, 1.5] }, view: [1, 1.3], r: 1.6 },
   { name: 'Lyapunov function check', f: '-x+4y', g: '-x-y^3', E: 'x^2+4y^2', r: 1.6 },
   { name: 'Reversible system', f: 'y-y^3', g: '-x-y^2', view: [-0.4, 0], r: 1.8 },
+  { name: 'Hopf, supercritical (polar)', polar: true, f: '\\mu r-r^3', g: '\\omega+br^2', params: { mu: [0.2, -0.5, 0.5], omega: [1, -2, 2], b: [0, -2, 2] }, r: 1.2, bif: 'mu' },
+  { name: 'Hopf, subcritical (polar)', polar: true, f: '\\mu r+r^3-r^5', g: '\\omega+br^2', params: { mu: [-0.1, -0.5, 0.3], omega: [1, -2, 2], b: [0, -2, 2] }, r: 1.6, bif: 'mu' },
+  { name: 'Infinite-period bifurcation (polar)', polar: true, f: 'r(1-r^2)', g: '\\mu-\\sin\\theta', params: { mu: [1.2, 0, 2] }, r: 1.6, bif: 'mu' },
   { name: 'Linear center, nonlinear spiral', f: '-y+ax(x^2+y^2)', g: 'x+ay(x^2+y^2)', params: { a: [0, -1, 1] }, r: 1.4 },
 ];
 
@@ -427,12 +463,14 @@ function writeFields() {
   mE.value = state.E;
   $('v0').value = state.vars[0];
   $('v1').value = state.vars[1];
-  $('so').checked = state.so;
+  $('mode').value = state.polar ? 'polar' : state.so ? 'so' : 'xy';
+  $('varbox').hidden = state.polar;
+  $('polarnote').hidden = !state.polar;
   updateLabels();
 }
 
 function updateLabels() {
-  const [a, b] = state.vars.map(symTex);
+  const [a, b] = state.polar ? ['r', '\\theta'] : state.vars.map(symTex);
   lab.lf.value = `\\dot{${a}}=`;
   lab.lg.value = state.so ? `\\ddot{${a}}=` : `\\dot{${b}}=`;
 }
@@ -442,14 +480,24 @@ for (const id of ['v0', 'v1']) $(id).addEventListener('input', () => {
   if (state.so) mf.value = symTex(state.vars[1]);
   updateLabels(); rebuild();
 });
-$('so').addEventListener('change', () => {
-  state.so = $('so').checked;
-  if (!state.so && !state.f) state.f = symTex(state.vars[1]);
+$('mode').addEventListener('change', () => {
+  const m = $('mode').value;
+  state.so = m === 'so'; state.polar = m === 'polar';
+  if (!state.so && !state.f) state.f = state.polar ? 'r' : symTex(state.vars[1]);
   writeFields(); rebuild();
+  $('mode').blur();
 });
 
+// ṙ, θ̇ → ẋ = ṙ cos θ − r θ̇ sin θ, ẏ = ṙ sin θ + r θ̇ cos θ
+const polarCart = (R, T) => [
+  (x, y, P) => { const r = Math.hypot(x, y), t = Math.atan2(y, x); return R(r, t, P) * Math.cos(t) - r * T(r, t, P) * Math.sin(t); },
+  (x, y, P) => { const r = Math.hypot(x, y), t = Math.atan2(y, x); return R(r, t, P) * Math.sin(t) + r * T(r, t, P) * Math.cos(t); },
+];
+const polarScalar = E => (x, y, P) => E(Math.hypot(x, y), Math.atan2(y, x), P);
+let modelId = 0;
+
 function rebuild() {
-  const vars = state.vars;
+  const vars = state.polar ? ['r', 'theta'] : state.vars;
   const out = {}, used = new Set();
   for (const [key, latex, el, msg] of [
     ['f', state.so ? symTex(vars[1]) : state.f, mf, 'ef'],
@@ -466,8 +514,16 @@ function rebuild() {
     }
   }
   // an empty field clears the plot; a half-typed one keeps the last good model
-  if (out.f && out.g) model = { f: out.f.fn, g: out.g.fn, E: out.E ? out.E.fn : null, used: [...used],
-    polyF: out.f.poly, polyG: out.g.poly, crnErr: out.f.polyErr || out.g.polyErr };
+  if (out.f && out.g) {
+    model = { f: out.f.fn, g: out.g.fn, E: out.E ? out.E.fn : null, used: [...used],
+      polyF: out.f.poly, polyG: out.g.poly, crnErr: out.f.polyErr || out.g.polyErr };
+    if (state.polar) {
+      [model.f, model.g] = polarCart(out.f.fn, out.g.fn);
+      model.polar = true; model.R = out.f.fn;
+      if (model.E) model.E = polarScalar(model.E);
+    }
+    modelId++;
+  }
   else if (out.f === null || out.g === null) model = null;
   if (model) for (const n of model.used) if (!state.params[n]) state.params[n] = { v: 1, min: -2, max: 2 };
   renderParams();
@@ -477,12 +533,14 @@ function rebuild() {
 // ---------- parameters ----------
 
 let paramKey = '';
+const paramSync = {};
 function renderParams() {
   const names = model ? model.used.slice().sort() : [];
   for (const n of names) P[n] = state.params[n].v;
   const key = names.join(',');
   if (key === paramKey) return;
   paramKey = key;
+  syncBifControls();
   const box = $('params');
   if (!names.length) { box.innerHTML = '<div class="empty">Any symbol other than the variables becomes a slider.</div>'; return; }
   box.innerHTML = '';
@@ -511,6 +569,7 @@ function renderParams() {
       p[k] = +inp.value; p.v = Math.min(Math.max(p.v, p.min), p.max); P[n] = p.v; sync(); requestDraw(true);
     });
     sync();
+    paramSync[n] = sync;
     box.appendChild(row);
   }
 }
@@ -561,9 +620,9 @@ function jac(x, y) {
   ];
 }
 
-function findFixedPoints() {
-  const b = bounds(), span = Math.max(b.x1 - b.x0, b.y1 - b.y0);
-  const pad = 0.25 * span, n = 18, found = [];
+function findFixedPoints(b = bounds(), n = 18) {
+  const span = Math.max(b.x1 - b.x0, b.y1 - b.y0);
+  const pad = 0.25 * span, found = [];
   for (let i = 0; i <= n; i++) for (let j = 0; j <= n; j++) {
     let x = b.x0 - pad + (b.x1 - b.x0 + 2 * pad) * i / n;
     let y = b.y0 - pad + (b.y1 - b.y0 + 2 * pad) * j / n;
@@ -650,7 +709,7 @@ function integrateDP(x, y, dir, opt) {
       x = nx; y = ny; t += h; n++;
       pts.push(x, y);
       if (x < box.x0 || x > box.x1 || y < box.y0 || y > box.y1) break;
-      if (closes(x, y, sx, sy, maxDist, () => left = true, left)) { pts.push(sx, sy); break; }
+      if (!opt.noClose && closes(x, y, sx, sy, maxDist, () => left = true, left)) { pts.push(sx, sy); break; }
     }
     h *= Math.min(5, Math.max(0.2, 0.9 * Math.pow(tol / (err || 1e-300), 0.2)));
   }
@@ -916,6 +975,7 @@ function edotImage() {
 // Signs of parameter-dependent coefficients come from the current slider values.
 
 function buildCRN() {
+  if (model.polar) return { err: 'Reaction networks are read from the ẋ, ẏ form; switch the equation form to check one.' };
   if (model.crnErr) return { err: `Not a polynomial system: ${model.crnErr}.` };
   const groups = new Map();
   [model.polyF, model.polyG].forEach((poly, i) => {
@@ -985,7 +1045,7 @@ function requestDraw(model) { if (model) dirtyModel = true; if (!frame) frame = 
 
 function colors() {
   const cs = getComputedStyle(document.documentElement), c = {};
-  for (const k of ['canvas', 'grid', 'axis', 'field', 'nx', 'ny', 'traj', 'auto', 'stable', 'unstable', 'energy', 'fp-stable', 'fp-unstable', 'fp-saddle', 'fp-center', 'fp-degen', 'muted', 'ink', 'line'])
+  for (const k of ['canvas', 'grid', 'axis', 'field', 'nx', 'ny', 'traj', 'auto', 'stable', 'unstable', 'energy', 'fp-stable', 'fp-unstable', 'fp-saddle', 'fp-center', 'fp-degen', 'muted', 'ink', 'line', 'accent'])
     c[k] = cs.getPropertyValue('--' + k).trim();
   return c;
 }
@@ -999,6 +1059,7 @@ function draw() {
     try { analyze(); } catch (e) { console.error(e); an = null; }
     renderSidebar();
     saveURL();
+    if (bif.on && model) bifMaybeStart();
   }
   const C = colors();
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
@@ -1027,6 +1088,7 @@ function draw() {
   if (preview) { drawPath(preview.f, 1, C.traj, 2, 1); drawPath(preview.b, -1, C.traj, 2, 0.55); }
   for (const p of an.fps) drawFP(ctx, ...toS(p.x, p.y), p, C, 6);
   drawTD(C);
+  drawBif();
 }
 
 function drawGrid(C) {
@@ -1219,6 +1281,289 @@ $('fps').addEventListener('click', e => {
   view.cx = p.x; view.cy = p.y; requestDraw(true);
 });
 
+// ---------- bifurcation diagram ----------
+// Sweep one parameter over its slider range. At each value: fixed points (Newton from a grid over the
+// current view), classified; branches are linked by nearest neighbour between consecutive values.
+// Stable limit cycles: long forward integration, kept when the tail is periodic and the mean divergence
+// along it is negative. Polar systems with θ-independent ṙ get exact cycle radii (roots of ṙ).
+
+const bif = { on: false, param: null, coord: 'x', cycles: true, data: null, job: 0, key: '', timer: 0, map: null };
+const bifCv = $('bif'), bctx = bifCv.getContext('2d');
+let BW = 0, BH = 0;
+new ResizeObserver(() => {
+  const r = bifCv.getBoundingClientRect();
+  BW = r.width; BH = r.height;
+  bifCv.width = Math.round(BW * DPR); bifCv.height = Math.round(BH * DPR);
+  drawBif();
+}).observe(bifCv);
+
+const coordOf = (x, y) => bif.coord === 'x' ? x : bif.coord === 'y' ? y : Math.hypot(x, y);
+const plainSym = n => symHtml(n).replace(/<sub>(.*)<\/sub>/, '_$1');
+
+function setBif(on) {
+  bif.on = !!(on && model && model.used.length);
+  document.body.classList.toggle('bif-on', bif.on);
+  $('bifpanel').hidden = !bif.on;
+  $('bifbtn').classList.toggle('on', bif.on);
+  if (bif.on) { syncBifControls(); bif.key = ''; }
+  requestDraw(true);
+}
+function syncBifControls() {
+  const names = model ? model.used.slice().sort() : [];
+  $('bifbtn').disabled = !names.length;
+  if (!names.length) { if (bif.on) setBif(false); return; }
+  if (!names.includes(bif.param)) bif.param = names.includes('mu') ? 'mu' : names[0];
+  $('bifp').innerHTML = names.map(n => `<option value="${n}"${n === bif.param ? ' selected' : ''}>${plainSym(n)}</option>`).join('');
+  const [a, b] = state.vars.map(plainSym);
+  $('bifc').options[0].text = a; $('bifc').options[1].text = b;
+  $('bifc').options[2].text = `r = √(${a}²+${b}²)`;
+  $('bifc').value = bif.coord;
+  $('bifcyc').checked = bif.cycles;
+}
+$('bifbtn').addEventListener('click', () => setBif(!bif.on));
+$('bifclose').addEventListener('click', () => setBif(false));
+$('bifp').addEventListener('change', () => { bif.param = $('bifp').value; requestDraw(true); });
+$('bifc').addEventListener('change', () => { bif.coord = $('bifc').value; bif.key = ''; requestDraw(true); });
+$('bifcyc').addEventListener('change', () => { bif.cycles = $('bifcyc').checked; requestDraw(true); });
+
+function bifMaybeStart() {
+  const p = state.params[bif.param];
+  if (!p) return;
+  const b = bounds();
+  const others = model.used.filter(n => n !== bif.param).map(n => `${n}=${P[n]}`).join(',');
+  const key = [modelId, bif.param, p.min, p.max, bif.coord, bif.cycles, others, b.x0, b.x1, b.y0, b.y1].join('|');
+  if (key === bif.key) return;
+  bif.key = key;
+  clearTimeout(bif.timer);
+  bif.timer = setTimeout(bifStart, 200);
+}
+
+function bifStart() {
+  if (!bif.on || !model || !state.params[bif.param]) return;
+  const job = ++bif.job, name = bif.param, { min, max } = state.params[name];
+  if (!(max > min)) return;
+  const N = 241, box = bounds(), span = Math.max(box.x1 - box.x0, box.y1 - box.y0);
+  const padX = 0.05 * (box.x1 - box.x0), padY = 0.05 * (box.y1 - box.y0);
+  const inBox = q => q.x > box.x0 - padX && q.x < box.x1 + padX && q.y > box.y0 - padY && q.y < box.y1 + padY;
+  const polarCycles = bif.cycles ? polarCycleFn() : null;
+  const d = bif.data = { name, min, max, N, mus: [], fps: [], cyc: [], segs: null, marks: [], box, span, done: false };
+  let i = 0;
+  const step = () => {
+    if (job !== bif.job) return;
+    const t0 = performance.now();
+    try {
+      while (i < N && performance.now() - t0 < 14) {
+        const mu = min + (max - min) * i / (N - 1);
+        P[name] = mu;
+        const fps = findFixedPoints(box, 12).filter(inBox);
+        d.mus[i] = mu; d.fps[i] = fps;
+        d.cyc[i] = !bif.cycles ? [] : polarCycles ? polarCycles(box) : i % 2 === 0 ? findCycles(box, fps) : [];
+        i++;
+      }
+    } finally { P[name] = state.params[name].v; }
+    $('bifstatus').textContent = i < N ? `computing ${Math.round(100 * i / N)}%` : '';
+    if (i >= N) { linkBranches(d); d.done = true; }
+    drawBif();
+    if (i < N) setTimeout(step, 0);
+  };
+  step();
+}
+
+function findCycles(box, fps) {
+  const span = Math.max(box.x1 - box.x0, box.y1 - box.y0), w = box.x1 - box.x0, h = box.y1 - box.y0;
+  const seeds = fps.filter(q => q.stab === 'unstable').map(q => [q.x + 0.013 * span, q.y + 0.007 * span]);
+  seeds.push([box.x0 + 0.27 * w, box.y0 + 0.71 * h], [box.x0 + 0.79 * w, box.y0 + 0.31 * h]);
+  const opt = {
+    box: { x0: box.x0 - span, x1: box.x1 + span, y0: box.y0 - span, y1: box.y1 + span },
+    maxSteps: 2500, maxDist: 0.01 * span, tol: 1e-6 * span, stopSpeed: 1e-5 * span, noClose: true,
+  };
+  const out = [];
+  for (const [sx, sy] of seeds) {
+    const pts = integrateDP(sx, sy, 1, opt), n = pts.length / 2;
+    if (n < 400) continue;
+    const ex = pts[pts.length - 2], ey = pts[pts.length - 1];
+    if (ex < opt.box.x0 || ex > opt.box.x1 || ey < opt.box.y0 || ey > opt.box.y1) continue;
+    const range = (a, b) => {
+      let lo = Infinity, hi = -Infinity;
+      for (let k = a; k < b; k++) { const c = coordOf(pts[2 * k], pts[2 * k + 1]); if (c < lo) lo = c; if (c > hi) hi = c; }
+      return [lo, hi];
+    };
+    const k0 = Math.floor(0.6 * n), k1 = Math.floor(0.8 * n), A = range(k0, k1), B = range(k1, n);
+    const tol = 0.02 * (B[1] - B[0]) + 1e-4 * span;
+    if (Math.abs(A[0] - B[0]) > tol || Math.abs(A[1] - B[1]) > tol) continue;   // still transient
+    let xr = [Infinity, -Infinity], yr = [Infinity, -Infinity];
+    for (let k = k1; k < n; k++) { const x = pts[2 * k], y = pts[2 * k + 1]; xr = [Math.min(xr[0], x), Math.max(xr[1], x)]; yr = [Math.min(yr[0], y), Math.max(yr[1], y)]; }
+    if (Math.max(xr[1] - xr[0], yr[1] - yr[0]) < 2e-3 * span) continue;          // collapsed onto a point
+    let div = 0, m = 0;
+    const stride = Math.max(1, Math.floor((n - k1) / 40));
+    for (let k = k1; k < n; k += stride) { const J = jac(pts[2 * k], pts[2 * k + 1]); div += J[0] + J[3]; m++; }
+    if (!(div / m < -1e-6)) continue;                                           // not attracting (e.g. a center's family)
+    if (!out.some(c => Math.abs(c.lo - B[0]) < tol && Math.abs(c.hi - B[1]) < tol)) out.push({ lo: B[0], hi: B[1], stable: true });
+  }
+  return out;
+}
+
+function polarCycleFn() {
+  if (!model.polar) return null;
+  const R = model.R;
+  for (const r of [0.3, 0.7, 1.3]) {
+    const a = R(r, 0, P);
+    for (const t of [1, 2.5, 4]) if (!(Math.abs(R(r, t, P) - a) <= 1e-9 * (1 + Math.abs(a)))) return null;
+  }
+  return box => {
+    const rmax = Math.max(...[[box.x0, box.y0], [box.x1, box.y0], [box.x0, box.y1], [box.x1, box.y1]].map(([x, y]) => Math.hypot(x, y)));
+    const out = [], n = 400;
+    let r0 = rmax * 1e-3, v0 = R(r0, 0, P);
+    for (let k = 1; k <= n; k++) {
+      const r1 = rmax * k / n, v1 = R(r1, 0, P);
+      if (isFinite(v0) && isFinite(v1) && v0 * v1 < 0) {
+        let a = r0, b = r1, fa = v0;
+        for (let it = 0; it < 50; it++) { const m = (a + b) / 2, fm = R(m, 0, P); if (fa * fm <= 0) b = m; else { a = m; fa = fm; } }
+        const rs = (a + b) / 2, hh = 1e-6 * (1 + rs), slope = R(rs + hh, 0, P) - R(rs - hh, 0, P);
+        out.push(bif.coord === 'r' ? { lo: rs, hi: rs, stable: slope < 0 } : { lo: -rs, hi: rs, stable: slope < 0 });
+      }
+      r0 = r1; v0 = v1;
+    }
+    return out;
+  };
+}
+
+function linkBranches(d) {
+  const segs = [], marks = [], tol = 0.05 * d.span, b = d.box;
+  const inner = q => q.x > b.x0 + 0.03 * (b.x1 - b.x0) && q.x < b.x1 - 0.03 * (b.x1 - b.x0) && q.y > b.y0 + 0.03 * (b.y1 - b.y0) && q.y < b.y1 - 0.03 * (b.y1 - b.y0);
+  const mark = (mu, q, kind) => marks.push({ mu, c: coordOf(q.x, q.y), kind });
+  for (let i = 1; i < d.N; i++) {
+    const A = d.fps[i - 1], B = d.fps[i], used = new Set();
+    for (const q of B) {
+      let best = -1, bd = tol;
+      A.forEach((p, k) => { const dd = Math.hypot(p.x - q.x, p.y - q.y); if (dd < bd && !used.has(k)) { bd = dd; best = k; } });
+      if (best < 0) { if (inner(q)) mark(d.mus[i], q, 'F'); continue; }
+      used.add(best);
+      const p = A[best], mid = { x: (p.x + q.x) / 2, y: (p.y + q.y) / 2 }, mu = (d.mus[i - 1] + d.mus[i]) / 2;
+      segs.push({ i, p, q });
+      if (p.det * q.det < 0) mark(mu, mid, 'BP');
+      else if (p.det > 0 && q.det > 0 && p.tau * q.tau < 0) mark(mu, mid, 'H');
+    }
+    A.forEach((p, k) => { if (!used.has(k) && inner(p)) mark(d.mus[i - 1], p, 'F'); });
+  }
+  d.segs = segs; d.marks = marks;
+}
+
+const MARK_INFO = { H: 'Hopf: τ crosses 0 with Δ > 0', BP: 'branch point: Δ crosses 0 (transcritical / pitchfork)', F: 'fold: a branch ends (saddle-node)' };
+
+function niceTicks(lo, hi, n) {
+  const raw = (hi - lo) / n, mag = Math.pow(10, Math.floor(Math.log10(raw)));
+  const step = [1, 2, 5, 10].map(m => m * mag).find(s => s >= raw);
+  const out = [];
+  for (let v = Math.ceil(lo / step) * step; v <= hi + 1e-12; v += step) out.push(Math.abs(v) < step * 1e-9 ? 0 : v);
+  return out;
+}
+
+function drawBif() {
+  if (!bif.on || !BW || !BH) return;
+  const C = colors(), c = bctx, d = bif.data;
+  c.setTransform(DPR, 0, 0, DPR, 0, 0);
+  c.fillStyle = C.canvas; c.fillRect(0, 0, BW, BH);
+  $('biflegend').innerHTML = `<span><i style="border-color:${C['fp-stable']}"></i>stable</span><span><i style="border-color:${C['fp-unstable']};border-top-style:dashed"></i>unstable</span><span><i style="border-color:${C['fp-saddle']};border-top-style:dotted"></i>saddle</span>` +
+    (bif.cycles ? `<span style="color:${C.energy}">● cycle max/min</span>` : '');
+  if (!d || d.name !== bif.param) return;
+  const L = 52, Rm = 14, T = 12, B = 28;
+  let lo = Infinity, hi = -Infinity;
+  for (const arr of d.fps) if (arr) for (const q of arr) { const v = coordOf(q.x, q.y); lo = Math.min(lo, v); hi = Math.max(hi, v); }
+  for (const arr of d.cyc) if (arr) for (const cy of arr) { lo = Math.min(lo, cy.lo); hi = Math.max(hi, cy.hi); }
+  if (!isFinite(lo)) { lo = -1; hi = 1; }
+  if (hi - lo < 1e-9) { lo -= 1; hi += 1; }
+  const pad = 0.08 * (hi - lo); lo -= pad; hi += pad;
+  const X = mu => L + (mu - d.min) / (d.max - d.min) * (BW - L - Rm);
+  const Y = v => T + (hi - v) / (hi - lo) * (BH - T - B);
+  bif.map = { X, Y, L, Rm, d };
+  // axes and ticks
+  c.font = '11px ui-monospace, "SF Mono", Menlo, Consolas, monospace';
+  c.strokeStyle = C.grid; c.lineWidth = 1; c.fillStyle = C.muted;
+  c.textAlign = 'center';
+  for (const v of niceTicks(d.min, d.max, 8)) { const px = Math.round(X(v)) + .5; c.beginPath(); c.moveTo(px, T); c.lineTo(px, BH - B); c.stroke(); c.fillText(+v.toPrecision(3), px, BH - B + 14); }
+  c.textAlign = 'right';
+  for (const v of niceTicks(lo, hi, 5)) { const py = Math.round(Y(v)) + .5; c.beginPath(); c.moveTo(L, py); c.lineTo(BW - Rm, py); c.stroke(); c.fillText(+v.toPrecision(3), L - 6, py + 4); }
+  c.strokeStyle = C.axis;
+  if (lo < 0 && hi > 0) { c.beginPath(); c.moveTo(L, Math.round(Y(0)) + .5); c.lineTo(BW - Rm, Math.round(Y(0)) + .5); c.stroke(); }
+  c.strokeRect(L + .5, T + .5, BW - L - Rm, BH - T - B);
+  c.font = 'italic 14px "Times New Roman", serif'; c.fillStyle = C.ink;
+  c.textAlign = 'right'; c.fillText(plainSym(d.name), BW - Rm, BH - 4);
+  c.textAlign = 'left'; c.fillText(bif.coord === 'r' ? 'r' : plainSym(state.vars[bif.coord === 'x' ? 0 : 1]), 6, T + 12);
+  // fixed-point branches
+  c.save();
+  c.beginPath(); c.rect(L, T, BW - L - Rm, BH - T - B); c.clip();
+  const styles = {
+    stable: [C['fp-stable'], 2.4, []], unstable: [C['fp-unstable'], 1.6, [6, 4]],
+    saddle: [C['fp-saddle'], 1.6, [2, 3]], center: [C['fp-center'], 1.6, [6, 4]], degen: [C['fp-degen'], 1.4, [2, 3]],
+  };
+  if (d.segs) {
+    for (const [stab, [col, w, dash]] of Object.entries(styles)) {
+      // chain segments into one polyline per branch so dash patterns run continuously
+      const chains = [], tail = new Map();
+      for (const s of d.segs) if (s.q.stab === stab) {
+        let ch = tail.get(s.p);
+        if (!ch) { ch = [[X(d.mus[s.i - 1]), Y(coordOf(s.p.x, s.p.y))]]; chains.push(ch); }
+        tail.delete(s.p);
+        ch.push([X(d.mus[s.i]), Y(coordOf(s.q.x, s.q.y))]);
+        tail.set(s.q, ch);
+      }
+      c.strokeStyle = col; c.lineWidth = w; c.setLineDash(dash); c.beginPath();
+      for (const ch of chains) ch.forEach(([px, py], k) => k ? c.lineTo(px, py) : c.moveTo(px, py));
+      c.stroke();
+    }
+    c.setLineDash([]);
+  } else {
+    d.fps.forEach((arr, i) => arr && arr.forEach(q => { c.fillStyle = styles[q.stab][0]; c.fillRect(X(d.mus[i]) - 1, Y(coordOf(q.x, q.y)) - 1, 2, 2); }));
+  }
+  // limit cycles
+  c.lineWidth = 1.2;
+  d.cyc.forEach((arr, i) => arr && arr.forEach(cy => {
+    for (const v of cy.lo === cy.hi ? [cy.lo] : [cy.lo, cy.hi]) {
+      c.beginPath(); c.arc(X(d.mus[i]), Y(v), 2, 0, 2 * Math.PI);
+      if (cy.stable) { c.fillStyle = C.energy; c.fill(); } else { c.strokeStyle = C.energy; c.stroke(); }
+    }
+  }));
+  c.restore();
+  // bifurcation markers (deduplicated on screen, H and BP before F)
+  const placed = [];
+  bif.marks = [];
+  for (const m of [...(d.marks || [])].sort((a, b) => (a.kind === 'F') - (b.kind === 'F'))) {
+    const px = X(m.mu), py = Y(m.c);
+    if (placed.some(([qx, qy]) => Math.hypot(qx - px, qy - py) < 14)) continue;
+    placed.push([px, py]); bif.marks.push({ ...m, px, py });
+    c.fillStyle = C.canvas; c.strokeStyle = C.ink; c.lineWidth = 1.4;
+    c.beginPath(); c.moveTo(px, py - 5); c.lineTo(px + 5, py); c.lineTo(px, py + 5); c.lineTo(px - 5, py); c.closePath(); c.fill(); c.stroke();
+    c.fillStyle = C.ink; c.font = '600 11px system-ui, sans-serif'; c.textAlign = 'left';
+    c.fillText(m.kind, px + 7, py - 6);
+  }
+  // current parameter value and its fixed points
+  const v = state.params[d.name] ? state.params[d.name].v : NaN;
+  if (v >= d.min && v <= d.max) {
+    const px = X(v);
+    c.strokeStyle = C.accent || C.ink; c.globalAlpha = 0.6; c.lineWidth = 1.5;
+    c.beginPath(); c.moveTo(px, T); c.lineTo(px, BH - B); c.stroke(); c.globalAlpha = 1;
+    if (an && an.fps) for (const q of an.fps) { const py = Y(coordOf(q.x, q.y)); if (py > T && py < BH - B) drawFP(c, px, py, q, C, 4.5); }
+  }
+}
+
+function bifPointer(e) {
+  const m = bif.map;
+  if (!m || !bif.data) return;
+  const d = m.d, mu = d.min + (e.offsetX - m.L) / (BW - m.L - m.Rm) * (d.max - d.min);
+  const near = (bif.marks || []).find(k => Math.hypot(k.px - e.offsetX, k.py - e.offsetY) < 9);
+  $('bifstatus').textContent = near ? `${near.kind} at ${plainSym(d.name)} ≈ ${fmt(near.mu)}: ${MARK_INFO[near.kind]}` : `${plainSym(d.name)} = ${fmt(mu)}`;
+  if (!(e.buttons & 1)) return;
+  const p = state.params[d.name];
+  p.v = +Math.min(d.max, Math.max(d.min, mu)).toPrecision(5);
+  P[d.name] = p.v;
+  if (paramSync[d.name]) paramSync[d.name]();
+  requestDraw(true);
+}
+bifCv.addEventListener('pointerdown', e => { bifCv.setPointerCapture(e.pointerId); bifPointer(e); });
+bifCv.addEventListener('pointermove', bifPointer);
+bifCv.addEventListener('pointerleave', () => { if (bif.data && bif.data.done) $('bifstatus').textContent = ''; });
+
 // ---------- interaction ----------
 
 const pointers = new Map();
@@ -1307,11 +1652,12 @@ function fit() {
 }
 
 document.addEventListener('keydown', e => {
-  if (e.target.closest('math-field, input, select, textarea') || e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.target.closest?.('math-field, input, select, textarea') || e.metaKey || e.ctrlKey || e.altKey) return;
   const k = e.key.toLowerCase();
   if (k === 'f') fit();
   else if (k === 'c') { state.seeds = []; requestDraw(true); }
   else if (k === 'z') { state.seeds.pop(); requestDraw(true); }
+  else if (k === 'b') setBif(!bif.on);
   else if (LAYERS.some(l => l.k === k)) toggleLayer(k);
   else return;
   e.preventDefault();
@@ -1330,8 +1676,10 @@ sel.addEventListener('change', () => {
 
 function loadPreset(p) {
   state.vars = p.vars ? [...p.vars] : ['x', 'y'];
-  state.so = !!p.so;
+  state.so = !!p.so; state.polar = !!p.polar;
   state.f = p.so ? '' : p.f;
+  if (p.bif) bif.param = p.bif;
+  bif.coord = p.polar ? 'r' : 'x';
   state.g = p.g; state.E = p.E || '';
   state.seeds = [];
   for (const [n, [v, min, max]] of Object.entries(p.params || {})) state.params[n] = { v, min, max };
@@ -1352,6 +1700,8 @@ function saveURL() {
     if (state.E) q.set('E', state.E);
     q.set('vars', state.vars.join(','));
     if (state.so) q.set('so', '1');
+    if (state.polar) q.set('mode', 'polar');
+    if (bif.on) q.set('bif', `${bif.param}:${bif.coord}`);
     if (model) q.set('p', model.used.map(n => { const p = state.params[n]; return `${n}:${p.v}:${p.min}:${p.max}`; }).join(';'));
     const r6 = v => +v.toPrecision(6);
     q.set('view', [view.cx, view.cy, radius()].map(r6).join(','));
@@ -1368,6 +1718,8 @@ function loadURL() {
   if (!q.has('g')) return false;
   state.vars = (q.get('vars') || 'x,y').split(',');
   state.so = q.get('so') === '1';
+  state.polar = q.get('mode') === 'polar';
+  if (q.has('bif')) { const [bp, bc] = q.get('bif').split(':'); bif.param = bp; bif.coord = bc || 'x'; bif.wanted = true; }
   state.f = q.get('f') || ''; state.g = q.get('g'); state.E = q.get('E') || '';
   for (const s of (q.get('p') || '').split(';').filter(Boolean)) {
     const [n, v, min, max] = s.split(':');
@@ -1393,7 +1745,7 @@ function toast(t) { const el = $('toast'); el.textContent = t; el.style.opacity 
 
 resize();
 renderLayers();
-if (loadURL()) { writeFields(); rebuild(); }
+if (loadURL()) { writeFields(); rebuild(); if (bif.wanted) setBif(true); }
 else loadPreset(PRESETS[1]);
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { lastSide = ''; requestDraw(true); });
 </script>
