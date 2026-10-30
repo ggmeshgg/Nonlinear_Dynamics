@@ -67,7 +67,29 @@ polar form with θ̇ depending on θ the field is not C¹ at the origin; the ori
 then classified by the sign of ṙ, without eigenvalues. Reaction-network signs
 use the current slider values.
 
+## Code and tests
+
+`core.js` holds the mathematics: parsing, fixed points and their classification,
+integrators, contours, structure checks, reaction networks, limit cycles and
+the bifurcation sweep. `index.html` holds the interface and drawing and imports
+`core.js`. The Compute Engine is imported by package name: an import map in
+`index.html` points it at jsDelivr, and in Node it comes from `node_modules`.
+
+`test/core.test.js` checks known answers, each from the analysis of a system
+rather than from the program's own output: equilibria and their types, which
+systems are Hamiltonian or reversible, Van der Pol's cycle (amplitude 2.01,
+period 6.663 at μ = 1), the √μ Hopf branch, fold, branch and Hopf points at
+their exact parameter values, no limit cycles in conservative systems. A change
+to the mathematics comes with a test of this kind.
+
+```sh
+npm ci
+npm test
+```
+
 ## Running
 
-Open `index.html` in a browser. MathLive and the Cortex Compute Engine load from
-jsDelivr, so an internet connection is needed.
+Serve the folder over HTTP: `index.html` loads `core.js` as a module, which
+browsers refuse from `file://`. From the repository root, `npm run build` and
+`npm run preview` serve the whole site. MathLive and the Compute Engine load
+from jsDelivr, so an internet connection is needed.

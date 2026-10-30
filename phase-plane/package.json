@@ -1,0 +1,11 @@
+{
+  "name": "phase-plane-lab",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test"
+  },
+  "devDependencies": {
+    "@cortex-js/compute-engine": "0.153.0"
+  }
+}
