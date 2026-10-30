@@ -304,7 +304,7 @@ function compileLatex(latex, vars) {
   let poly = null, polyErr = null;
   try { poly = collect(polyOf(ex, vars)); }
   catch (e) { if (!(e instanceof NotPoly)) throw e; polyErr = e.message; }
-  return { fn, params: [...params], poly, polyErr };
+  return { fn, params: [...params], poly, polyErr, json: ex };
 }
 
 // ---------- polynomial form, for the mass-action reaction network ----------
@@ -516,10 +516,10 @@ function rebuild() {
   // an empty field clears the plot; a half-typed one keeps the last good model
   if (out.f && out.g) {
     model = { f: out.f.fn, g: out.g.fn, E: out.E ? out.E.fn : null, used: [...used],
-      polyF: out.f.poly, polyG: out.g.poly, crnErr: out.f.polyErr || out.g.polyErr };
+      polyF: out.f.poly, polyG: out.g.poly, crnErr: out.f.polyErr || out.g.polyErr, jsonF: out.f.json, jsonG: out.g.json };
     if (state.polar) {
       [model.f, model.g] = polarCart(out.f.fn, out.g.fn);
-      model.polar = true; model.R = out.f.fn;
+      model.polar = true; model.R = out.f.fn; model.T = out.g.fn;
       if (model.E) model.E = polarScalar(model.E);
     }
     modelId++;
@@ -620,17 +620,25 @@ function jac(x, y) {
   ];
 }
 
-function findFixedPoints(b = bounds(), n = 18) {
+function findFixedPoints(b = bounds(), n = 18, extraSeeds = []) {
   const span = Math.max(b.x1 - b.x0, b.y1 - b.y0);
   const pad = 0.25 * span, found = [];
-  for (let i = 0; i <= n; i++) for (let j = 0; j <= n; j++) {
-    let x = b.x0 - pad + (b.x1 - b.x0 + 2 * pad) * i / n;
-    let y = b.y0 - pad + (b.y1 - b.y0 + 2 * pad) * j / n;
+  const cx = (b.x0 + b.x1) / 2, cy = (b.y0 + b.y1) / 2;
+  // seeds: nullcline crossings first, then a jittered grid (a regular one can sit exactly on singular lines of J), nearest to the centre first
+  const seeds = extraSeeds.slice();
+  for (let i = 0; i <= n; i++) for (let j = 0; j <= n; j++) seeds.push([
+    b.x0 - pad + (b.x1 - b.x0 + 2 * pad) * (i + 0.5 + 0.1 * Math.sin(1.7 * j)) / (n + 1),
+    b.y0 - pad + (b.y1 - b.y0 + 2 * pad) * (j + 0.5 + 0.1 * Math.cos(2.3 * i)) / (n + 1)]);
+  seeds.sort((p, q) => Math.hypot(p[0] - cx, p[1] - cy) - Math.hypot(q[0] - cx, q[1] - cy));
+  for (const seed of seeds) {
+    if (found.length >= 200) break;
+    let [x, y] = seed;
     let F0 = fx(x, y), G0 = gy(x, y), r0 = Math.hypot(F0, G0), ok = false;
-    for (let it = 0; it < 60 && isFinite(r0); it++) {
-      if (r0 < 1e-12) { ok = true; break; }
+    // run to the step floor rather than a residual: at a degenerate root the residual is ~x², so stopping at 1e-12 leaves x ≈ 1e-6 and a fake Δ
+    for (let it = 0; it < 80 && isFinite(r0); it++) {
+      if (r0 === 0) { ok = true; break; }
       const [a, bb, c, d] = jac(x, y), det = a * d - bb * c;
-      if (!isFinite(det) || Math.abs(det) < 1e-300) break;
+      if (!isFinite(det) || Math.abs(det) < 1e-300) { ok = r0 < 1e-10; break; }
       let dx = (d * F0 - bb * G0) / det, dy = (-c * F0 + a * G0) / det, lam = 1, nx, ny, F1, G1, r1;
       for (let k = 0; k < 8; k++, lam /= 2) {
         nx = x - lam * dx; ny = y - lam * dy; F1 = fx(nx, ny); G1 = gy(nx, ny); r1 = Math.hypot(F1, G1);
@@ -640,20 +648,39 @@ function findFixedPoints(b = bounds(), n = 18) {
       x = nx; y = ny; F0 = F1; G0 = G1; r0 = r1;
       if (stepLen < 1e-13 * (1 + Math.abs(x) + Math.abs(y))) { ok = r0 < 1e-8; break; }
     }
+    if (!ok && isFinite(r0) && r0 < 1e-10) ok = true;   // slow (linear) convergence at a multiple root, close enough
     if (!ok || !isFinite(x) || !isFinite(y)) continue;
-    if (x < b.x0 - span || x > b.x1 + span || y < b.y0 - span || y > b.y1 + span) continue;
+    if (x < b.x0 - pad || x > b.x1 + pad || y < b.y0 - pad || y > b.y1 + pad) continue;
     if (found.some(p => Math.hypot(p.x - x, p.y - y) < 1e-5 * span)) continue;
-    found.push({ x, y });
-    if (found.length > 60) break;
+    found.push({ x, y, inView: x >= b.x0 && x <= b.x1 && y >= b.y0 && y <= b.y1 });
   }
-  return found.map(classify);
+  const fps = found.map(classify);
+  if (model.polar) for (const p of fps) if (Math.hypot(p.x, p.y) < 1e-6 * span) polarOrigin(p, span);
+  return fps;
 }
 
-function classify({ x, y }) {
+// a polar system whose θ̇ depends on θ is not C¹ at the origin, so the Jacobian there means nothing;
+// the sign of ṙ on a small circle still says whether the origin attracts or repels
+function polarOrigin(p, span) {
+  const r = 1e-3 * span, R = model.R, T = model.T;
+  let tMin = Infinity, tMax = -Infinity, rMin = Infinity, rMax = -Infinity;
+  for (let q = 0; q < 64; q++) {
+    const th = q * Math.PI / 32, tv = T(r, th, P), rv = R(r, th, P);
+    tMin = Math.min(tMin, tv); tMax = Math.max(tMax, tv); rMin = Math.min(rMin, rv); rMax = Math.max(rMax, rv);
+  }
+  if (!isFinite(tMin) || !isFinite(tMax) || tMax - tMin <= 1e-9 * (1 + Math.abs(tMax))) return;
+  p.tau = p.det = p.disc = NaN; p.eig = null; p.vecs = null;
+  if (rMin > 0) { p.type = 'repeller (non-smooth)'; p.stab = 'unstable'; }
+  else if (rMax < 0) { p.type = 'attractor (non-smooth)'; p.stab = 'stable'; }
+  else { p.type = 'degenerate'; p.stab = 'degen'; }
+  p.note = 'θ̇ depends on θ: the field is not C¹ at the origin, so there is no linearization; classified by the sign of ṙ near r = 0';
+}
+
+function classify({ x, y, inView = true }) {
   const J = jac(x, y), [a, b, c, d] = J;
   const tau = a + d, det = a * d - b * c, disc = tau * tau - 4 * det;
   const sc = Math.abs(a) + Math.abs(b) + Math.abs(c) + Math.abs(d) + 1e-12;
-  const p = { x, y, J, tau, det, disc };
+  const p = { x, y, J, tau, det, disc, inView };
   const zero = v => Math.abs(v) < 1e-7 * sc;
   if (Math.abs(det) < 1e-7 * sc * sc) { p.type = 'degenerate'; p.stab = 'degen'; p.note = 'Δ = 0: linearization inconclusive'; }
   else if (det < 0) { p.type = 'saddle'; p.stab = 'saddle'; }
@@ -683,7 +710,8 @@ function integrateDP(x, y, dir, opt) {
   const { box, maxSteps, maxDist, tol, stopSpeed } = opt;
   const pts = [x, y], sx = x, sy = y;
   let h = 0.01, t = 0, left = false;
-  for (let n = 0, tries = 0; n < maxSteps && tries < maxSteps * 3 && t < 400; tries++) {
+  if (opt.times) opt.times.push(0);
+  for (let n = 0, tries = 0; n < maxSteps && tries < maxSteps * 3; tries++) {
     const k1x = dir * fx(x, y), k1y = dir * gy(x, y), sp = Math.hypot(k1x, k1y);
     if (!(sp > stopSpeed)) break;
     h = Math.min(h, maxDist / sp);
@@ -708,7 +736,9 @@ function integrateDP(x, y, dir, opt) {
     if (err <= tol || h < 1e-10) {
       x = nx; y = ny; t += h; n++;
       pts.push(x, y);
+      if (opt.times) opt.times.push(t);
       if (x < box.x0 || x > box.x1 || y < box.y0 || y > box.y1) break;
+      if (opt.stop && opt.stop(x, y, t)) break;
       if (!opt.noClose && closes(x, y, sx, sy, maxDist, () => left = true, left)) { pts.push(sx, sy); break; }
     }
     h *= Math.min(5, Math.max(0.2, 0.9 * Math.pow(tol / (err || 1e-300), 0.2)));
@@ -724,7 +754,8 @@ function integrateIM(x, y, dir, opt) {
   for (let n = 0; n < maxSteps; n++) {
     const F = fx(x, y), G = gy(x, y), sp = Math.hypot(F, G);
     if (!(sp > stopSpeed)) break;
-    const h = dir * Math.min(0.1, Math.max(1e-5, maxDist / sp));
+    const J = jac(x, y), Jn = Math.abs(J[0]) + Math.abs(J[1]) + Math.abs(J[2]) + Math.abs(J[3]);
+    const h = dir * Math.min(1, 0.25 / (Jn + 1e-12), Math.max(1e-5, maxDist / sp));
     let X = x + h * F, Y = y + h * G;
     for (let k = 0; k < 8; k++) {
       const mx = (x + X) / 2, my = (y + Y) / 2;
@@ -738,6 +769,8 @@ function integrateIM(x, y, dir, opt) {
   return pts;
 }
 
+const conservative = () => !!(an && (an.hamiltonian || (an.E && an.E.conserved)));
+
 function closes(x, y, sx, sy, maxDist, markLeft, left) {
   const d = Math.hypot(x - sx, y - sy);
   if (!left) { if (d > 6 * maxDist) markLeft(); return false; }
@@ -749,6 +782,8 @@ function integrate(x, y, dir, maxSteps) {
   const opt = {
     box: { x0: b.x0 - span, x1: b.x1 + span, y0: b.y0 - span, y1: b.y1 + span },
     maxSteps, maxDist: 2.5 * view.s, tol: 1e-6 * span, stopSpeed: 1e-7 * span,
+    // snapping a returning trajectory shut is only honest when orbits are level sets; a slow spiral would be drawn as a closed loop
+    noClose: !conservative(),
   };
   return (an && an.hamiltonian ? integrateIM : integrateDP)(x, y, dir, opt);
 }
@@ -810,6 +845,32 @@ function interpGrid(G, x, y) {
   return (1 - a) * (1 - b) * v[j * nx + i] + a * (1 - b) * v[j * nx + i + 1] + a * b * v[(j + 1) * nx + i + 1] + (1 - a) * b * v[(j + 1) * nx + i];
 }
 
+// intersections of two marching-squares segment sets built on the same grid (bucketed by cell)
+function crossings(S1, S2, G) {
+  const dx = G.xs[1] - G.xs[0], dy = G.ys[1] - G.ys[0], x0 = G.xs[0], y0 = G.ys[0];
+  const key = (x, y) => Math.floor((x - x0) / dx) * 100003 + Math.floor((y - y0) / dy);
+  const cells = new Map();
+  for (let k = 0; k < S2.length; k += 4) {
+    const kk = key((S2[k] + S2[k + 2]) / 2, (S2[k + 1] + S2[k + 3]) / 2);
+    if (!cells.has(kk)) cells.set(kk, []);
+    cells.get(kk).push(k);
+  }
+  const out = [];
+  for (let k = 0; k < S1.length && out.length < 400; k += 4) {
+    const list = cells.get(key((S1[k] + S1[k + 2]) / 2, (S1[k + 1] + S1[k + 3]) / 2));
+    if (!list) continue;
+    const ax = S1[k], ay = S1[k + 1], bx = S1[k + 2] - ax, by = S1[k + 3] - ay;
+    for (const m of list) {
+      const cx = S2[m], cy = S2[m + 1], ex = S2[m + 2] - cx, ey = S2[m + 3] - cy;
+      const den = bx * ey - by * ex;
+      if (Math.abs(den) < 1e-300) continue;
+      const t = ((cx - ax) * ey - (cy - ay) * ex) / den, u = ((cx - ax) * by - (cy - ay) * bx) / den;
+      if (t >= -0.05 && t <= 1.05 && u >= -0.05 && u <= 1.05) out.push([ax + t * bx, ay + t * by]);
+    }
+  }
+  return out;
+}
+
 // H with ∂H/∂y = f, ∂H/∂x = −g, by trapezoid line integrals from the bottom-left corner
 function hamiltonianGrid(step) {
   const G = sampleGrid(null, step), { nx, ny, xs, ys, v } = G;
@@ -839,6 +900,31 @@ function samplePoints(n) {
 
 let an = null;
 
+// div f as a closed form, differentiated by the Compute Engine; null when it cannot be formed
+function symbolicDiv() {
+  const vars = state.polar ? ['r', 'theta'] : state.vars;
+  try {
+    let d;
+    ce.pushScope();
+    try {
+      for (const v of vars) ce.declare(v, 'real');
+      const F = ce.box(model.jsonF), G = ce.box(model.jsonG);
+      // polar: div = (1/r) ∂(r ṙ)/∂r + (1/r) ∂θ̇/∂θ
+      d = state.polar
+        ? ce.box(['Divide', ['Add', ['D', ['Multiply', vars[0], F], vars[0]], ['D', G, vars[1]]], vars[0]])
+        : ce.box(['Add', ['D', F, vars[0]], ['D', G, vars[1]]]);
+      d = d.evaluate().simplify();
+      if (!d.isValid) return null;
+      d = d.json;
+    } finally { ce.popScope(); }
+    if (d === 0 || (d && d.num === '0')) return { zero: true };
+    const code = toJS(d, n => n === vars[0] ? 'x' : n === vars[1] ? 'y' : `P[${JSON.stringify(n)}]`);
+    let fn = new Function('_root', `return (x,y,P) => ${code};`)(_root);
+    if (state.polar) { const f0 = fn; fn = (x, y, P) => f0(Math.hypot(x, y), Math.atan2(y, x), P); }
+    return { zero: false, fn };
+  } catch { return null; }
+}
+
 function detectStructure() {
   const pts = samplePoints(300);
   let divMax = 0, scMax = 0, rY = 0, rX = 0, finite = 0;
@@ -854,7 +940,20 @@ function detectStructure() {
     if (isFinite(a)) rY = Math.max(rY, a); else rY = Infinity;
     if (isFinite(c)) rX = Math.max(rX, c); else rX = Infinity;
   }
-  const res = { hamiltonian: finite > 50 && divMax < 1e-6 * (scMax + 1e-12), revY: finite > 50 && rY < 1e-8, revX: finite > 50 && rX < 1e-8 };
+  // Hamiltonian ⇔ div f ≡ 0. Prefer the closed form: finite differences cannot tell weak damping from zero in a stiff system.
+  const sd = symbolicDiv();
+  let hamiltonian, divNote;
+  if (sd && sd.zero) { hamiltonian = true; divNote = 'div f ≡ 0 identically'; }
+  else if (sd) {
+    let m = 0, cnt = 0;
+    for (const [x, y] of pts) { const v = sd.fn(x, y, P); if (isFinite(v)) { m = Math.max(m, Math.abs(v)); cnt++; } }
+    hamiltonian = cnt > 50 && m <= 1e-12 * (scMax + 1e-12);
+    divNote = hamiltonian ? 'div f = 0 at these parameter values' : `max |div f| = ${fmt(m)} in view`;
+  } else {
+    hamiltonian = finite > 50 && divMax < 1e-8 * (scMax + 1e-12);
+    divNote = hamiltonian ? '|div f| < 10⁻⁸ relative, by finite differences' : `max |div f| ≈ ${fmt(divMax)} in view (finite differences)`;
+  }
+  const res = { hamiltonian, divNote, revY: finite > 50 && rY < 1e-8, revX: finite > 50 && rX < 1e-8 };
   if (model.E) {
     const E = model.E;
     let worst = 0, pos = 0, neg = 0, n = 0;
@@ -891,17 +990,15 @@ function analyze() {
   if (!model) { an = null; return; }
   an = { ...detectStructure() };
   an.crn = buildCRN();
-  an.fps = findFixedPoints();
+  // nullclines first: every fixed point in view is a crossing of ẋ = 0 and ẏ = 0, so the crossings seed Newton
+  const Gf = sampleGrid(fx, 4), Gg = sampleGrid(gy, 4);
+  an.ncf = contour(Gf, 0, fx); an.ncg = contour(Gg, 0, gy);
+  an.fps = findFixedPoints(bounds(), 18, crossings(an.ncf, an.ncg, Gf));
   for (const p of an.fps) if (p.stab === 'center') {
     const why = centerReason(p);
     if (why) { p.type = 'nonlinear center'; p.note = why; }
   }
   const span = 2 * radius();
-  // nullclines
-  if (state.layers.n) {
-    const Gf = sampleGrid(fx, 4), Gg = sampleGrid(gy, 4);
-    an.ncf = contour(Gf, 0, fx); an.ncg = contour(Gg, 0, gy);
-  }
   // energy
   an.energy = null;
   const Efn = model.E && an.E && an.E.conserved ? (x, y) => model.E(x, y, P) : null;
@@ -1203,7 +1300,7 @@ function drawTD(C) {
   const t = $('td'), c = t.getContext('2d'), w = t.width / DPR, h = t.height / DPR;
   c.setTransform(DPR, 0, 0, DPR, 0, 0);
   c.clearRect(0, 0, w, h);
-  const fps = an ? an.fps : [];
+  const fps = an ? an.fps.filter(p => p.inView) : [];
   let R = 1;
   for (const p of fps) if (isFinite(p.tau) && isFinite(p.det)) R = Math.max(R, Math.abs(p.tau) * 1.25, 2 * Math.sqrt(Math.abs(p.det)) * 1.1);
   const D = R * R / 4 * 1.15;
@@ -1226,7 +1323,7 @@ function drawTD(C) {
 // ---------- sidebar output ----------
 
 const fmt = v => { if (!isFinite(v)) return String(v); if (Math.abs(v) < 1e-9) return '0'; return String(+v.toPrecision(3)); };
-const fmtEigs = e => Array.isArray(e[0]) ? `${Math.abs(e[0][0]) < 1e-9 ? '' : fmt(e[0][0]) + ' '}± ${fmt(Math.abs(e[0][1]))}i` : e.map(fmt).join(', ');
+const fmtEigs = e => !e ? 'n/a' : Array.isArray(e[0]) ? `${Math.abs(e[0][0]) < 1e-9 ? '' : fmt(e[0][0]) + ' '}± ${fmt(Math.abs(e[0][1]))}i` : e.map(fmt).join(', ');
 
 let lastSide = '', lastCRN = '';
 function renderCRN() {
@@ -1248,7 +1345,7 @@ function renderSidebar() {
   let badges = '', fps = '';
   if (an) {
     const B = (cls, t, s) => `<div class="badge ${cls}">${t}${s ? `<small>${s}</small>` : ''}</div>`;
-    if (an.hamiltonian) badges += B('good', 'Conservative: Hamiltonian', 'div f = 0, so energy H is conserved; H contours drawn, symplectic integrator used');
+    if (an.hamiltonian) badges += B('good', 'Conservative: Hamiltonian', `${an.divNote}, so energy H is conserved; H contours drawn, symplectic integrator used`);
     if (an.revY) badges += B('good', `Reversible under t→−t, ${symHtml(state.vars[1])}→−${symHtml(state.vars[1])}`, 'linear centers on the symmetry axis are true centers');
     if (an.revX) badges += B('good', `Reversible under t→−t, ${symHtml(state.vars[0])}→−${symHtml(state.vars[0])}`, 'linear centers on the symmetry axis are true centers');
     if (an.E) {
@@ -1258,11 +1355,15 @@ function renderSidebar() {
       else if (e.neg === 0 && e.pos > 0) badges += B('', 'dE/dt ≥ 0 in view', 'E increases along trajectories (red tint)');
       else badges += B('bad', 'E is not conserved', 'tint shows where dE/dt > 0 (red) or < 0 (blue)');
     }
-    if (!badges) badges = '<div class="empty">No conserved quantity or symmetry detected in view.</div>';
+    if (!badges) badges = `<div class="empty">No conserved quantity or symmetry detected in view${an.divNote ? ` (${an.divNote})` : ''}.</div>`;
     const C = colors();
-    fps = an.fps.map((p, i) => `<tr data-i="${i}"><td><span class="dot" style="border-color:${fpColor(p, C)};background:${p.stab === 'stable' || p.stab === 'saddle' ? fpColor(p, C) : 'transparent'}"></span></td>
+    const inView = an.fps.map((p, i) => [p, i]).filter(([p]) => p.inView);
+    const degen = inView.filter(([p]) => p.stab === 'degen');
+    const curve = degen.length >= 6;   // Newton landing on many Δ = 0 points means a curve of equilibria, not a list
+    fps = inView.filter(([p]) => !curve || p.stab !== 'degen').map(([p, i]) => `<tr data-i="${i}"><td><span class="dot" style="border-color:${fpColor(p, C)};background:${p.stab === 'stable' || p.stab === 'saddle' ? fpColor(p, C) : 'transparent'}"></span></td>
       <td>${p.type}${p.note ? `<br><span class="help">${p.note}</span>` : ''}</td>
       <td class="num">(${fmt(p.x)}, ${fmt(p.y)})<br>λ = ${fmtEigs(p.eig)}</td></tr>`).join('');
+    if (curve) fps += `<tr><td><span class="dot" style="border-color:${C['fp-degen']}"></span></td><td colspan="2">curve of fixed points (Δ = 0 everywhere on it)<br><span class="help">${degen.length} points sampled in view; the linearization is inconclusive along it</span></td></tr>`;
   }
   renderCRN();
   const side = badges + '|' + fps;
@@ -1270,7 +1371,7 @@ function renderSidebar() {
   lastSide = side;
   $('badges').innerHTML = badges;
   $('fps').innerHTML = fps || '<tr><td class="empty">none in view</td></tr>';
-  $('fpcount').textContent = an ? an.fps.length : '';
+  $('fpcount').textContent = an ? `${an.fps.filter(p => p.inView).length} in view` : '';
   const C = colors(), [a, b] = state.vars.map(symHtml);
   $('legend').innerHTML = `<span><i style="background:${C.nx}"></i>${a}&#775;=0</span><span><i style="background:${C.ny}"></i>${b}&#775;=0</span>` +
     (state.layers.m ? `<span><i style="background:${C.stable}"></i>stable mfd</span><span><i style="background:${C.unstable}"></i>unstable mfd</span>` : '');
@@ -1346,7 +1447,8 @@ function bifStart() {
   const padX = 0.05 * (box.x1 - box.x0), padY = 0.05 * (box.y1 - box.y0);
   const inBox = q => q.x > box.x0 - padX && q.x < box.x1 + padX && q.y > box.y0 - padY && q.y < box.y1 + padY;
   const polarCycles = bif.cycles ? polarCycleFn() : null;
-  const d = bif.data = { name, min, max, N, mus: [], fps: [], cyc: [], segs: null, marks: [], box, span, done: false };
+  const cons = conservative();   // closed orbits of a center's family are not limit cycles; do not go looking
+  const d = bif.data = { name, min, max, N, mus: [], fps: [], cyc: [], segs: null, marks: [], box, span, done: false, conservative: cons };
   let i = 0;
   const step = () => {
     if (job !== bif.job) return;
@@ -1357,7 +1459,7 @@ function bifStart() {
         P[name] = mu;
         const fps = findFixedPoints(box, 12).filter(inBox);
         d.mus[i] = mu; d.fps[i] = fps;
-        d.cyc[i] = !bif.cycles ? [] : polarCycles ? polarCycles(box) : i % 2 === 0 ? findCycles(box, fps) : [];
+        d.cyc[i] = !bif.cycles || cons ? [] : polarCycles ? polarCycles(box) : i % 2 === 0 ? findCycles(box, fps) : [];
         i++;
       }
     } finally { P[name] = state.params[name].v; }
@@ -1393,14 +1495,53 @@ function findCycles(box, fps) {
     if (Math.abs(A[0] - B[0]) > tol || Math.abs(A[1] - B[1]) > tol) continue;   // still transient
     let xr = [Infinity, -Infinity], yr = [Infinity, -Infinity];
     for (let k = k1; k < n; k++) { const x = pts[2 * k], y = pts[2 * k + 1]; xr = [Math.min(xr[0], x), Math.max(xr[1], x)]; yr = [Math.min(yr[0], y), Math.max(yr[1], y)]; }
-    if (Math.max(xr[1] - xr[0], yr[1] - yr[0]) < 2e-3 * span) continue;          // collapsed onto a point
-    let div = 0, m = 0;
-    const stride = Math.max(1, Math.floor((n - k1) / 40));
-    for (let k = k1; k < n; k += stride) { const J = jac(pts[2 * k], pts[2 * k + 1]); div += J[0] + J[3]; m++; }
-    if (!(div / m < -1e-6)) continue;                                           // not attracting (e.g. a center's family)
-    if (!out.some(c => Math.abs(c.lo - B[0]) < tol && Math.abs(c.hi - B[1]) < tol)) out.push({ lo: B[0], hi: B[1], stable: true });
+    const size = Math.max(xr[1] - xr[0], yr[1] - yr[0]);
+    if (size < 2e-3 * span) continue;                                           // collapsed onto a point
+    // one exact period from the tail's end, then the Poincaré return map on both sides of the orbit:
+    // a point displaced by δ comes back displaced by δ' with |δ'/δ| = Floquet multiplier. A centre's family returns
+    // to the same orbit (ratio 1); an attracting cycle pulls both sides in (ratio clearly below 1).
+    const loop = returnLoop(ex, ey, opt, size);
+    if (!loop) continue;
+    const { p, t, sec } = loop, nx = -sec.vy, ny = sec.vx, del = 0.05 * size;
+    let mult = 0;
+    for (const sg of [1, -1]) {
+      const r = returnLoop(ex + sg * del * nx, ey + sg * del * ny, opt, size, sec);
+      if (!r) { mult = Infinity; break; }
+      const X = r.p[r.p.length - 2], Y = r.p[r.p.length - 1];
+      mult = Math.max(mult, ((X - ex) * nx + (Y - ey) * ny) / (sg * del));
+    }
+    if (!(mult < 0.9)) continue;                                                // not clearly attracting: a centre's family, or too close to a Hopf point
+    let lo = Infinity, hi = -Infinity;
+    for (let k = 0; k < t.length; k++) { const c = coordOf(p[2 * k], p[2 * k + 1]); if (c < lo) lo = c; if (c > hi) hi = c; }
+    if (!out.some(c => Math.abs(c.lo - lo) < tol && Math.abs(c.hi - hi) < tol)) out.push({ lo, hi, stable: true, period: t[t.length - 1], mult });
   }
   return out;
+}
+
+// integrate from (x, y) until the orbit first comes back through the transverse section `sec`
+// (default: the section through (x, y) itself); returns points, times and the section
+function returnLoop(x, y, opt, size, sec) {
+  if (!sec) {
+    const f0 = fx(x, y), g0 = gy(x, y), sp = Math.hypot(f0, g0);
+    if (!(sp > 0)) return null;
+    sec = { ox: x, oy: y, vx: f0 / sp, vy: g0 / sp };
+  }
+  const { ox, oy, vx, vy } = sec, times = [];
+  let left = false, sPrev = 0, hit = false, frac = 1;
+  const pts = integrateDP(x, y, 1, { ...opt, maxSteps: 3000, times, stop: (X, Y) => {
+    const dx = X - ox, dy = Y - oy, s = dx * vx + dy * vy;
+    if (!left) { if (Math.hypot(dx, dy) > 6 * opt.maxDist) left = true; sPrev = s; return false; }
+    const cross = sPrev < 0 && s >= 0 && Math.abs(dy * vx - dx * vy) < 0.3 * size;
+    if (cross) { hit = true; frac = sPrev / (sPrev - s); }   // where in the last step the section was crossed
+    sPrev = s;
+    return cross;
+  } });
+  if (!hit || times.length < 20) return null;
+  // cut the last step at the crossing: an overshoot of one step adds div·Δt to the integral, enough to fake a multiplier
+  const n = times.length, ax = pts[2 * n - 4], ay = pts[2 * n - 3];
+  pts[2 * n - 2] = ax + frac * (pts[2 * n - 2] - ax); pts[2 * n - 1] = ay + frac * (pts[2 * n - 1] - ay);
+  times[n - 1] = times[n - 2] + frac * (times[n - 1] - times[n - 2]);
+  return { p: pts, t: times, sec };
 }
 
 function polarCycleFn() {
@@ -1420,7 +1561,10 @@ function polarCycleFn() {
         let a = r0, b = r1, fa = v0;
         for (let it = 0; it < 50; it++) { const m = (a + b) / 2, fm = R(m, 0, P); if (fa * fm <= 0) b = m; else { a = m; fa = fm; } }
         const rs = (a + b) / 2, hh = 1e-6 * (1 + rs), slope = R(rs + hh, 0, P) - R(rs - hh, 0, P);
-        out.push(bif.coord === 'r' ? { lo: rs, hi: rs, stable: slope < 0 } : { lo: -rs, hi: rs, stable: slope < 0 });
+        // if θ̇ vanishes somewhere on the circle it carries fixed points: an invariant circle, not a limit cycle
+        let sg = 0, rotates = true;
+        for (let q = 0; q < 64 && rotates; q++) { const sq = Math.sign(model.T(rs, q * Math.PI / 32, P)); if (!sq || (sg && sq !== sg)) rotates = false; sg = sq; }
+        if (rotates) out.push(bif.coord === 'r' ? { lo: rs, hi: rs, stable: slope < 0 } : { lo: -rs, hi: rs, stable: slope < 0 });
       }
       r0 = r1; v0 = v1;
     }
@@ -1432,19 +1576,38 @@ function linkBranches(d) {
   const segs = [], marks = [], tol = 0.05 * d.span, b = d.box;
   const inner = q => q.x > b.x0 + 0.03 * (b.x1 - b.x0) && q.x < b.x1 - 0.03 * (b.x1 - b.x0) && q.y > b.y0 + 0.03 * (b.y1 - b.y0) && q.y < b.y1 - 0.03 * (b.y1 - b.y0);
   const mark = (mu, q, kind) => marks.push({ mu, c: coordOf(q.x, q.y), kind });
+  // signs with the classifier's tolerance: a centre has τ = 0, a degenerate point Δ = 0, whatever the rounding noise says
+  const sDet = o => o.stab === 'degen' ? 0 : Math.sign(o.det) || 0;
+  const sTau = o => o.stab === 'degen' || o.stab === 'center' ? 0 : Math.sign(o.tau) || 0;
+  const near = (i, q) => i >= 0 && i < d.N ? d.fps[i].filter(p => Math.hypot(p.x - q.x, p.y - q.y) < tol) : [];
+  // where a branch breaks between samples i−1 and i: count branches near it one sample clear of the break on each side
+  // (a sample landing exactly on the bifurcation holds a single merged point). Nothing on one side → fold;
+  // branches on both sides → they meet or cross: a branch point; one and one → a gap in the search, not a bifurcation.
+  const endKind = (i, q) => {
+    const nb = near(i - 2, q).length, na = near(i + 1, q).length;
+    return nb === 0 || na === 0 ? 'F' : nb === 1 && na === 1 ? null : 'BP';
+  };
+  const next = new Map();
   for (let i = 1; i < d.N; i++) {
     const A = d.fps[i - 1], B = d.fps[i], used = new Set();
     for (const q of B) {
       let best = -1, bd = tol;
       A.forEach((p, k) => { const dd = Math.hypot(p.x - q.x, p.y - q.y); if (dd < bd && !used.has(k)) { bd = dd; best = k; } });
-      if (best < 0) { if (inner(q)) mark(d.mus[i], q, 'F'); continue; }
+      if (best < 0) { const k = inner(q) && endKind(i, q); if (k) mark(d.mus[i], q, k); continue; }
       used.add(best);
-      const p = A[best], mid = { x: (p.x + q.x) / 2, y: (p.y + q.y) / 2 }, mu = (d.mus[i - 1] + d.mus[i]) / 2;
-      segs.push({ i, p, q });
-      if (p.det * q.det < 0) mark(mu, mid, 'BP');
-      else if (p.det > 0 && q.det > 0 && p.tau * q.tau < 0) mark(mu, mid, 'H');
+      segs.push({ i, p: A[best], q });
+      next.set(A[best], q);
     }
-    A.forEach((p, k) => { if (!used.has(k) && inner(p)) mark(d.mus[i - 1], p, 'F'); });
+    A.forEach((p, k) => { if (!used.has(k) && inner(p)) { const kind = endKind(i, p); if (kind) mark(d.mus[i - 1], p, kind); } });
+  }
+  // Δ or τ changing sign along a branch, looking through one degenerate or centre sample in between
+  for (const sgm of segs) {
+    const p = sgm.p;
+    let q = sgm.q;
+    if ((sDet(q) === 0 || sTau(q) === 0) && next.has(q)) q = next.get(q);
+    const mid = { x: (p.x + sgm.q.x) / 2, y: (p.y + sgm.q.y) / 2 }, mu = (d.mus[sgm.i - 1] + d.mus[sgm.i]) / 2;
+    if (sDet(p) && sDet(q) && sDet(p) !== sDet(q)) mark(mu, mid, 'BP');
+    else if (sDet(p) > 0 && sDet(q) > 0 && sTau(p) && sTau(q) && sTau(p) !== sTau(q)) mark(mu, mid, 'H');
   }
   d.segs = segs; d.marks = marks;
 }
@@ -1465,7 +1628,7 @@ function drawBif() {
   c.setTransform(DPR, 0, 0, DPR, 0, 0);
   c.fillStyle = C.canvas; c.fillRect(0, 0, BW, BH);
   $('biflegend').innerHTML = `<span><i style="border-color:${C['fp-stable']}"></i>stable</span><span><i style="border-color:${C['fp-unstable']};border-top-style:dashed"></i>unstable</span><span><i style="border-color:${C['fp-saddle']};border-top-style:dotted"></i>saddle</span>` +
-    (bif.cycles ? `<span style="color:${C.energy}">● cycle max/min</span>` : '');
+    (bif.cycles ? (d && d.conservative ? `<span title="div f = 0 or E is conserved: closed orbits come in families and are not limit cycles">no limit cycles: conservative system</span>` : `<span style="color:${C.energy}">● cycle max/min</span>`) : '');
   if (!d || d.name !== bif.param) return;
   const L = 52, Rm = 14, T = 12, B = 28;
   let lo = Infinity, hi = -Infinity;
@@ -1631,7 +1794,7 @@ function showTip(px, py) {
   const p = an.fps.find(q => { const [sx, sy] = toS(q.x, q.y); return Math.hypot(sx - px, sy - py) < 10; });
   if (!p) return hideTip();
   tip.innerHTML = `<b>${p.type}</b>${p.note ? `<br><span style="color:var(--muted)">${p.note}</span>` : ''}
-    <div class="num">(${fmt(p.x)}, ${fmt(p.y)})<br>J = [${fmt(p.J[0])}, ${fmt(p.J[1])}; ${fmt(p.J[2])}, ${fmt(p.J[3])}]<br>τ = ${fmt(p.tau)}, Δ = ${fmt(p.det)}, τ²−4Δ = ${fmt(p.disc)}<br>λ = ${fmtEigs(p.eig)}</div>`;
+    <div class="num">(${fmt(p.x)}, ${fmt(p.y)})${p.eig ? `<br>J = [${fmt(p.J[0])}, ${fmt(p.J[1])}; ${fmt(p.J[2])}, ${fmt(p.J[3])}]<br>τ = ${fmt(p.tau)}, Δ = ${fmt(p.det)}, τ²−4Δ = ${fmt(p.disc)}<br>λ = ${fmtEigs(p.eig)}` : ''}</div>`;
   tip.style.display = 'block';
   const r = tip.getBoundingClientRect();
   tip.style.left = Math.min(px + 14, W - r.width - 8) + 'px';
