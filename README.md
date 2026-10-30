@@ -15,6 +15,7 @@ Chaos*: interactive simulations, worked solutions, and papers.
 | Gas the room | [Evacuation sandbox](gas-the-room/) | [Model and analysis](gas-the-room/paper/main-typst.pdf) |
 | RLC circuit (Russian) | [Interactive lecture](rlc-interactive-lecture/) | [Source notes](rlc-interactive-lecture/docs/source-notes.md) |
 | Liquid level | [Interactive model](liquid-level/) | [Local regime map](liquid-level/paper/local-regime-map.pdf) |
+| Phase Plane Lab | [Any 2D system: fixed points, manifolds, energy, reaction networks](phase-plane/) | [How it works](phase-plane/README.md) |
 
 ## Local build
 
