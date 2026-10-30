@@ -228,7 +228,7 @@ import { MathfieldElement } from 'https://cdn.jsdelivr.net/npm/mathlive@0.111.1/
 import {
   P, use, symTex, symHtml, compileLatex, factorTex, buildModel, fmt,
   fx, gy, trajectory, sampleGrid, contour, interpGrid, hamiltonianGrid,
-  detectStructure, equilibria, buildCRN, project, bifSweep,
+  detectStructure, equilibria, fpTable, buildCRN, project, bifSweep,
 } from './core.js';
 
 MathfieldElement.fontsDirectory = 'https://cdn.jsdelivr.net/npm/mathlive@0.111.1/fonts/';
@@ -758,13 +758,11 @@ function renderSidebar() {
     }
     if (!badges) badges = `<div class="empty">No conserved quantity or symmetry detected in view${an.divNote ? ` (${an.divNote})` : ''}.</div>`;
     const C = colors();
-    const inView = an.fps.map((p, i) => [p, i]).filter(([p]) => p.inView);
-    const degen = inView.filter(([p]) => p.stab === 'degen');
-    const curve = degen.length >= 6;   // Newton landing on many Δ = 0 points means a curve of equilibria, not a list
-    fps = inView.filter(([p]) => !curve || p.stab !== 'degen').map(([p, i]) => `<tr data-i="${i}"><td><span class="dot" style="border-color:${fpColor(p, C)};background:${p.stab === 'stable' || p.stab === 'saddle' ? fpColor(p, C) : 'transparent'}"></span></td>
+    const { rows, curve } = fpTable(an.fps);
+    fps = rows.map(([p, i]) => `<tr data-i="${i}"><td><span class="dot" style="border-color:${fpColor(p, C)};background:${p.stab === 'stable' || p.stab === 'saddle' ? fpColor(p, C) : 'transparent'}"></span></td>
       <td>${p.type}${p.note ? `<br><span class="help">${p.note}</span>` : ''}</td>
       <td class="num">(${fmt(p.x)}, ${fmt(p.y)})<br>λ = ${fmtEigs(p.eig)}</td></tr>`).join('');
-    if (curve) fps += `<tr><td><span class="dot" style="border-color:${C['fp-degen']}"></span></td><td colspan="2">curve of fixed points (Δ = 0 everywhere on it)<br><span class="help">${degen.length} points sampled in view; the linearization is inconclusive along it</span></td></tr>`;
+    if (curve) fps += `<tr><td><span class="dot" style="border-color:${C['fp-degen']}"></span></td><td colspan="2">curve of fixed points (Δ = 0 everywhere on it)<br><span class="help">${curve} points sampled in view; the linearization is inconclusive along it</span></td></tr>`;
   }
   renderCRN();
   const side = badges + '|' + fps;
@@ -772,7 +770,7 @@ function renderSidebar() {
   lastSide = side;
   $('badges').innerHTML = badges;
   $('fps').innerHTML = fps || '<tr><td class="empty">none in view</td></tr>';
-  $('fpcount').textContent = an ? `${an.fps.filter(p => p.inView).length} in view` : '';
+  $('fpcount').textContent = an ? `${fpTable(an.fps).count} in view` : '';
   const C = colors(), [a, b] = state.vars.map(symHtml);
   $('legend').innerHTML = `<span><i style="background:${C.nx}"></i>${a}&#775;=0</span><span><i style="background:${C.ny}"></i>${b}&#775;=0</span>` +
     (state.layers.m ? `<span><i style="background:${C.stable}"></i>stable mfd</span><span><i style="background:${C.unstable}"></i>unstable mfd</span>` : '');

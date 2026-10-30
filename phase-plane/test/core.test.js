@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  P, use, compileLatex, buildModel, fx, gy, jac, trajectory, symbolicDiv, detectStructure, equilibria,
+  P, use, compileLatex, buildModel, fx, gy, jac, trajectory, symbolicDiv, detectStructure, equilibria, fpTable,
   buildCRN, bifSweep, findCycles, polarCycleFn,
 } from '../core.js';
 
@@ -131,6 +131,7 @@ test('ẋ = sin πx, ẏ = sin πy: every lattice point in view, typed by parity
   const { fps } = analyze(win(1.5, 1.5, 2));   // x, y ∈ [−0.5, 3.5]: 4 × 4 points
   const seen = fps.filter(p => p.inView);
   assert.equal(seen.length, 16);
+  assert.deepEqual([fpTable(fps).count, fpTable(fps).curve], ['16', 0]);   // isolated points are counted one by one
   for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) {
     const p = near(fps, i, j);
     assert.ok(p, `(${i}, ${j}) found`);
@@ -147,6 +148,12 @@ test('ẋ = x(1−x−y), ẏ = y(1−x−y): isolated origin plus the line x + 
   const line = fps.filter(p => p.inView && !(Math.abs(p.x) < 1e-6 && Math.abs(p.y) < 1e-6));
   assert.ok(line.length >= 6);
   for (const p of line) { assert.equal(p.stab, 'degen'); close(p.x + p.y, 1, 1e-6); }
+  // the sidebar lists the origin and one curve, and counts them that way, not every sampled point of the line
+  const t = fpTable(fps);
+  assert.equal(t.rows.length, 1);
+  assert.ok(near(t.rows.map(([p]) => p), 0, 0));
+  assert.equal(t.curve, line.length);
+  assert.equal(t.count, '1 + curve');
 });
 
 test('pendulum: nonlinear center at 0 because it is Hamiltonian, saddles at ±π', () => {
