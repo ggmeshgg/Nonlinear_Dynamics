@@ -909,9 +909,9 @@ function symbolicDiv() {
     try {
       for (const v of vars) ce.declare(v, 'real');
       const F = ce.box(model.jsonF), G = ce.box(model.jsonG);
-      // polar: div = (1/r) ∂(r ṙ)/∂r + (1/r) ∂θ̇/∂θ
+      // polar: div = (1/r) ∂(r ṙ)/∂r + ∂θ̇/∂θ  (the angular velocity component is r θ̇)
       d = state.polar
-        ? ce.box(['Divide', ['Add', ['D', ['Multiply', vars[0], F], vars[0]], ['D', G, vars[1]]], vars[0]])
+        ? ce.box(['Add', ['Divide', ['D', ['Multiply', vars[0], F], vars[0]], vars[0]], ['D', G, vars[1]]])
         : ce.box(['Add', ['D', F, vars[0]], ['D', G, vars[1]]]);
       d = d.evaluate().simplify();
       if (!d.isValid) return null;
