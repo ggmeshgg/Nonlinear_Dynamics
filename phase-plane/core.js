@@ -578,6 +578,16 @@ function equilibria(b, nx, ny, st) {
   return { fps, ncf, ncg };
 }
 
+// What the sidebar lists: isolated points in view, with the many Δ = 0 points Newton lands on along a curve
+// of equilibria collapsed into one entry. rows keep the index into fps; curve is how many points it stands for.
+function fpTable(fps) {
+  const inView = fps.map((p, i) => [p, i]).filter(([p]) => p.inView);
+  const degen = inView.filter(([p]) => p.stab === 'degen').length;
+  const curve = degen >= 6 ? degen : 0;
+  const rows = curve ? inView.filter(([p]) => p.stab !== 'degen') : inView;
+  return { rows, curve, count: curve ? (rows.length ? `${rows.length} + curve` : 'curve') : `${rows.length}` };
+}
+
 // ---------- mass-action reaction network ----------
 // Hárs–Tóth: a polynomial system is realizable iff every negative term in ẋ contains x (and likewise for y).
 // Signs of parameter-dependent coefficients come from the current slider values.
@@ -808,6 +818,6 @@ export {
   GREEK, symTex, symHtml, compileLatex, factorTex, buildModel, fmt,
   fx, gy, jac, findFixedPoints, classify, integrateDP, integrateIM, trajectory,
   sampleGrid, contour, interpGrid, crossings, hamiltonianGrid,
-  symbolicDiv, detectStructure, centerReason, equilibria, buildCRN,
+  symbolicDiv, detectStructure, centerReason, equilibria, fpTable, buildCRN,
   project, bifSweep, findCycles, polarCycleFn, linkBranches,
 };
