@@ -116,6 +116,10 @@ table.fps td.num { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monosp
 table.fps tr { cursor: pointer; }
 table.fps tr:hover td { background: var(--chip); }
 .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; border: 2px solid; vertical-align: -1px; }
+.ixval { font: italic 20px "Times New Roman", serif; }
+.ixval.none { color: var(--bad); font: 600 14px system-ui, -apple-system, "Segoe UI", sans-serif; }
+#ixout .num { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 12px; color: var(--muted); margin-left: 8px; }
+#ixout .badges { margin-top: 6px; }
 #td { width: 100%; height: 210px; display: block; border-radius: 6px; background: var(--canvas); border: 1px solid var(--line); }
 .help { font-size: 12px; color: var(--muted); }
 #crn { display: flex; flex-direction: column; gap: 2px; }
@@ -187,13 +191,19 @@ table.fps tr:hover td { background: var(--chip); }
   </section>
 
   <section>
+    <div class="lbl">Index <span class="sp"></span><button id="ixclear" class="mini" title="Remove the circle" hidden>×</button><button id="ixbtn" class="mini" title="Draw a circle and count the turns of the field along it">circle <kbd>I</kbd></button></div>
+    <div id="ixout"></div>
+  </section>
+
+  <section>
     <div class="lbl">Trace–determinant plane</div>
     <canvas id="td"></canvas>
   </section>
 
   <section class="help">
     <kbd>click</kbd>/<kbd>drag</kbd> trajectory &nbsp; <kbd>shift</kbd>/<kbd>right</kbd>-drag pan &nbsp; <kbd>wheel</kbd> zoom<br>
-    <kbd>F</kbd> fit &nbsp; <kbd>C</kbd> clear &nbsp; <kbd>Z</kbd> undo &nbsp; <kbd>Tab</kbd> next field
+    <kbd>F</kbd> fit &nbsp; <kbd>C</kbd> clear &nbsp; <kbd>Z</kbd> undo &nbsp; <kbd>Tab</kbd> next field<br>
+    <kbd>I</kbd> index circle: press at the center, drag out the radius
   </section>
 </aside>
 <main>
@@ -228,7 +238,7 @@ import { MathfieldElement } from 'https://cdn.jsdelivr.net/npm/mathlive@0.111.1/
 import {
   P, use, symTex, symHtml, compileLatex, factorTex, buildModel, fmt,
   fx, gy, trajectory, sampleGrid, contour, interpGrid, hamiltonianGrid,
-  detectStructure, equilibria, buildCRN, project, bifSweep,
+  detectStructure, equilibria, fpTable, buildCRN, project, bifSweep, circleIndex, fpIndex, enclosedIndex,
 } from './core.js';
 
 MathfieldElement.fontsDirectory = 'https://cdn.jsdelivr.net/npm/mathlive@0.111.1/fonts/';
@@ -248,6 +258,7 @@ const state = {
   f: '', g: '', E: '', vars: ['x', 'y'], so: false, polar: false,
   params: {},          // name → {v, min, max}
   seeds: [],           // user trajectories [x, y]
+  ring: null,          // the index circle {x, y, r}
   layers: { v: true, n: true, m: true, e: true, o: true },
 };
 let view = { cx: 0, cy: 0, s: 0.01 };   // s = world units per CSS px
@@ -544,7 +555,7 @@ function requestDraw(model) { if (model) dirtyModel = true; if (!frame) frame = 
 
 function colors() {
   const cs = getComputedStyle(document.documentElement), c = {};
-  for (const k of ['canvas', 'grid', 'axis', 'field', 'nx', 'ny', 'traj', 'auto', 'stable', 'unstable', 'energy', 'fp-stable', 'fp-unstable', 'fp-saddle', 'fp-center', 'fp-degen', 'muted', 'ink', 'line', 'accent'])
+  for (const k of ['canvas', 'grid', 'axis', 'field', 'nx', 'ny', 'traj', 'auto', 'stable', 'unstable', 'energy', 'fp-stable', 'fp-unstable', 'fp-saddle', 'fp-center', 'fp-degen', 'muted', 'ink', 'line', 'accent', 'bad'])
     c[k] = cs.getPropertyValue('--' + k).trim();
   return c;
 }
@@ -559,7 +570,9 @@ function draw() {
     renderSidebar();
     saveURL();
     if (bif.on && model) bifMaybeStart();
+    ixDirty = true;
   }
+  if (ixDirty) updateIndex();
   const C = colors();
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   ctx.fillStyle = C.canvas; ctx.fillRect(0, 0, W, H);
@@ -586,6 +599,7 @@ function draw() {
   for (const o of an.user) { drawPath(o.f, 1, C.traj, 1.8, 1); drawPath(o.b, -1, C.traj, 1.8, 0.55); }
   if (preview) { drawPath(preview.f, 1, C.traj, 2, 1); drawPath(preview.b, -1, C.traj, 2, 0.55); }
   for (const p of an.fps) drawFP(ctx, ...toS(p.x, p.y), p, C, 6);
+  drawRing(C);
   drawTD(C);
   drawBif();
 }
@@ -696,6 +710,132 @@ function drawFP(c, x, y, p, C, r) {
   if (p.stab === 'center') { c.beginPath(); c.arc(x, y, 2, 0, 2 * Math.PI); c.fillStyle = col; c.fill(); }
 }
 
+// ---------- index circle ----------
+// The number comes from circleIndex in core.js; here it is placed, drawn and explained.
+
+let ixTool = false, ixDirty = false, ix = null;   // ix: circleIndex result plus .inside, from enclosedIndex
+const fmtIndex = k => k > 0 ? `+${k}` : k < 0 ? `−${-k}` : '0';
+
+function setIndexTool(on) {
+  ixTool = on;
+  $('ixbtn').classList.toggle('on', on);
+  if (on) toast('Press at the center, drag out the radius');
+  else cv.style.cursor = '';
+}
+function ringChanged() { ixDirty = true; saveURL(); requestDraw(); }
+$('ixbtn').addEventListener('click', () => setIndexTool(!ixTool));
+$('ixclear').addEventListener('click', () => { state.ring = null; ringChanged(); });
+
+function updateIndex() {
+  ixDirty = false;
+  const q = state.ring;
+  ix = q && model && q.r > 0 ? { ...circleIndex(q.x, q.y, q.r), inside: enclosedIndex(q.x, q.y, q.r, an || {}) } : null;
+  renderIndex();
+}
+
+const IX_WHY = {
+  fixed: p => `The circle passes through a fixed point near (${fmt(p.x)}, ${fmt(p.y)}). The index is defined only on curves that avoid them.`,
+  singular: p => `The field is undefined or jumps near (${fmt(p.x)}, ${fmt(p.y)}) on the circle, so its direction has no continuous angle there.`,
+  fast: () => 'The field turns too fast along this circle to count the turns reliably. Try a smaller circle.',
+};
+function renderIndex() {
+  const q = state.ring, box = $('ixout');
+  $('ixclear').hidden = !q;
+  if (!q || !ix) { box.innerHTML = `<div class="empty">With the circle tool on, press at a center and drag out the radius. A press on a fixed point centers on it exactly.</div>`; return; }
+  const where = `<span class="num">center (${fmt(q.x)}, ${fmt(q.y)}), R = ${fmt(q.r)}</span>`;
+  if (ix.index === null) {
+    box.innerHTML = `<span class="ixval none">No index on this circle</span><div class="num" style="margin:0">${where}</div><div class="badges"><div class="badge bad">${IX_WHY[ix.fail.kind](ix.fail)}</div></div>`;
+    return;
+  }
+  box.innerHTML = `<span class="ixval">I = ${fmtIndex(ix.index)}</span>${where}<div class="badges">${insideBadge(ix)}</div>`;
+}
+// the theorem as a check: the index on the circle is the sum of the indices of the fixed points inside
+function insideBadge({ index, inside: { fps, sum, unknown } }) {
+  const B = (cls, t, s) => `<div class="badge ${cls}">${t}${s ? `<small>${s}</small>` : ''}</div>`;
+  if (!fps.length) return index === 0
+    ? B('good', 'No fixed points found inside')
+    : B('bad', `No fixed points found inside, yet I = ${fmtIndex(index)}`, 'A point was missed, or the field has a singularity inside: a pole has an index too.');
+  const { rows, curve } = fpTable(fps), kinds = new Map();
+  for (const [p] of rows) kinds.set(p.type, { n: (kinds.get(p.type)?.n || 0) + 1, i: fpIndex(p) });
+  const list = [...kinds].map(([t, { n, i }]) => `${n > 1 ? `${n} × ` : ''}${t} (${i === null ? '?' : fmtIndex(i)})`);
+  if (curve) list.push('a curve of fixed points (?)');
+  const text = `Inside: ${list.join(', ')}`;
+  if (unknown) return B('', text, `Not a check: the linearization gives no index at ${unknown > 1 ? 'these points' : 'this point'}.${fps.length === 1 ? ' With nothing else inside, the I above is its index.' : ''}`);
+  return sum === index
+    ? B('good', text, `Sum ${fmtIndex(sum)}, equal to I`)
+    : B('bad', text, `Sum ${fmtIndex(sum)}, not I = ${fmtIndex(index)}: a point was missed, or the field has a singularity inside.`);
+}
+
+function drawRing(C) {
+  const q = state.ring;
+  if (!q) return;
+  const [sx, sy] = toS(q.x, q.y), r = q.r / view.s, ok = ix && ix.index !== null, col = ix && !ok ? C.bad : C.accent;
+  ctx.strokeStyle = col; ctx.fillStyle = col; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(sx - 5, sy); ctx.lineTo(sx + 5, sy); ctx.moveTo(sx, sy - 5); ctx.lineTo(sx, sy + 5); ctx.stroke();
+  if (!ix) return;
+  ctx.beginPath(); ctx.arc(sx, sy, r, 0, 2 * Math.PI); ctx.stroke();
+  // the field along the circle: the arrows whose turns are being counted
+  const n = Math.min(72, Math.max(8, Math.round(2 * Math.PI * r / 44)));
+  ctx.lineWidth = 1.6;
+  for (let k = 0; k < n; k++) {
+    const t = 2 * Math.PI * k / n, x = q.x + q.r * Math.cos(t), y = q.y + q.r * Math.sin(t), [px, py] = toS(x, y);
+    if (px < -20 || py < -20 || px > W + 20 || py > H + 20) continue;
+    const f = fx(x, y), g = gy(x, y), m = Math.hypot(f, g);
+    if (!isFinite(m) || m === 0) continue;
+    const ux = f / m, uy = -g / m, ex = px + 15 * ux, ey = py + 15 * uy;
+    ctx.beginPath();
+    ctx.moveTo(px, py); ctx.lineTo(ex, ey);
+    ctx.moveTo(ex - 5 * ux - 3.5 * uy, ey - 5 * uy + 3.5 * ux); ctx.lineTo(ex, ey); ctx.lineTo(ex - 5 * ux + 3.5 * uy, ey - 5 * uy - 3.5 * ux);
+    ctx.stroke();
+  }
+  // where the index breaks down
+  if (ix.fail && 'x' in ix.fail) {
+    const [px, py] = toS(ix.fail.x, ix.fail.y);
+    ctx.lineWidth = 2.5; ctx.beginPath();
+    ctx.moveTo(px - 6, py - 6); ctx.lineTo(px + 6, py + 6); ctx.moveTo(px - 6, py + 6); ctx.lineTo(px + 6, py - 6);
+    ctx.stroke();
+  }
+  // the number on the circle, kept on screen when the rim is not
+  const label = ok ? `I = ${fmtIndex(ix.index)}` : 'no index';
+  ctx.font = '600 14px system-ui, -apple-system, "Segoe UI", sans-serif'; ctx.textAlign = 'left';
+  const w = ctx.measureText(label).width + 14, h = 22;
+  const lx = Math.min(W - w - 6, Math.max(6, sx + r * Math.SQRT1_2 + 6));
+  const ly = Math.min(H - h - 6, Math.max(6, sy - r * Math.SQRT1_2 - h - 6));
+  ctx.fillStyle = C.canvas; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.roundRect(lx, ly, w, h, 5); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = col; ctx.fillText(label, lx + 7, ly + 16);
+}
+
+// a press near a fixed point's marker means that point, exactly
+function snapToFP(px, py) {
+  const p = an && an.fps.find(p => { const [sx, sy] = toS(p.x, p.y); return Math.hypot(sx - px, sy - py) < 10; });
+  return p ? [p.x, p.y] : toW(px, py);
+}
+// which part of the circle is under the pointer: its center moves it, its rim resizes it
+function ringHit(px, py) {
+  const q = state.ring;
+  if (!q) return null;
+  const [sx, sy] = toS(q.x, q.y), d = Math.hypot(px - sx, py - sy), r = q.r / view.s;
+  return d < Math.min(10, r / 2) ? 'move' : Math.abs(d - r) < 8 ? 'size' : null;
+}
+function ringPress(px, py) {
+  const kind = ringHit(px, py) || 'new', prev = state.ring;
+  if (kind === 'new') { const [x, y] = snapToFP(px, py); state.ring = { x, y, r: 0 }; }
+  drag = { mode: 'ring', kind, prev };
+  ringChanged();
+}
+function ringDrag(px, py) {
+  const q = state.ring;
+  if (drag.kind === 'move') [q.x, q.y] = snapToFP(px, py);
+  else {
+    const [sx, sy] = toS(q.x, q.y), d = Math.hypot(px - sx, py - sy);
+    q.r = (drag.kind === 'size' ? Math.max(d, 2) : d) * view.s;
+  }
+  ringChanged();
+}
+// a press with no stretch is a slip, and leaves the old circle in place
+function ringAbandon() { state.ring = drag.prev; ringChanged(); }
+
 // ---------- trace–determinant inset ----------
 
 function drawTD(C) {
@@ -758,13 +898,11 @@ function renderSidebar() {
     }
     if (!badges) badges = `<div class="empty">No conserved quantity or symmetry detected in view${an.divNote ? ` (${an.divNote})` : ''}.</div>`;
     const C = colors();
-    const inView = an.fps.map((p, i) => [p, i]).filter(([p]) => p.inView);
-    const degen = inView.filter(([p]) => p.stab === 'degen');
-    const curve = degen.length >= 6;   // Newton landing on many Δ = 0 points means a curve of equilibria, not a list
-    fps = inView.filter(([p]) => !curve || p.stab !== 'degen').map(([p, i]) => `<tr data-i="${i}"><td><span class="dot" style="border-color:${fpColor(p, C)};background:${p.stab === 'stable' || p.stab === 'saddle' ? fpColor(p, C) : 'transparent'}"></span></td>
+    const { rows, curve } = fpTable(an.fps);
+    fps = rows.map(([p, i]) => `<tr data-i="${i}"><td><span class="dot" style="border-color:${fpColor(p, C)};background:${p.stab === 'stable' || p.stab === 'saddle' ? fpColor(p, C) : 'transparent'}"></span></td>
       <td>${p.type}${p.note ? `<br><span class="help">${p.note}</span>` : ''}</td>
       <td class="num">(${fmt(p.x)}, ${fmt(p.y)})<br>λ = ${fmtEigs(p.eig)}</td></tr>`).join('');
-    if (curve) fps += `<tr><td><span class="dot" style="border-color:${C['fp-degen']}"></span></td><td colspan="2">curve of fixed points (Δ = 0 everywhere on it)<br><span class="help">${degen.length} points sampled in view; the linearization is inconclusive along it</span></td></tr>`;
+    if (curve) fps += `<tr><td><span class="dot" style="border-color:${C['fp-degen']}"></span></td><td colspan="2">curve of fixed points (Δ = 0 everywhere on it)<br><span class="help">${curve} points sampled in view; the linearization is inconclusive along it</span></td></tr>`;
   }
   renderCRN();
   const side = badges + '|' + fps;
@@ -772,7 +910,7 @@ function renderSidebar() {
   lastSide = side;
   $('badges').innerHTML = badges;
   $('fps').innerHTML = fps || '<tr><td class="empty">none in view</td></tr>';
-  $('fpcount').textContent = an ? `${an.fps.filter(p => p.inView).length} in view` : '';
+  $('fpcount').textContent = an ? `${fpTable(an.fps).count} in view` : '';
   const C = colors(), [a, b] = state.vars.map(symHtml);
   $('legend').innerHTML = `<span><i style="background:${C.nx}"></i>${a}&#775;=0</span><span><i style="background:${C.ny}"></i>${b}&#775;=0</span>` +
     (state.layers.m ? `<span><i style="background:${C.stable}"></i>stable mfd</span><span><i style="background:${C.unstable}"></i>unstable mfd</span>` : '');
@@ -981,8 +1119,13 @@ cv.addEventListener('contextmenu', e => e.preventDefault());
 cv.addEventListener('pointerdown', e => {
   cv.setPointerCapture(e.pointerId);
   pointers.set(e.pointerId, [e.offsetX, e.offsetY]);
-  if (pointers.size === 2) { preview = null; drag = { mode: 'pinch', start: pinchState(), view: { ...view } }; return; }
+  if (pointers.size === 2) {
+    if (drag && drag.mode === 'ring' && drag.kind === 'new') ringAbandon();
+    preview = null; drag = { mode: 'pinch', start: pinchState(), view: { ...view } };
+    return;
+  }
   if (e.button === 2 || e.button === 1 || e.shiftKey) drag = { mode: 'pan', x: e.offsetX, y: e.offsetY, view: { ...view } };
+  else if (ixTool) ringPress(e.offsetX, e.offsetY);
   else { drag = { mode: 'traj' }; setPreview(e.offsetX, e.offsetY); }
   hideTip();
 });
@@ -990,8 +1133,13 @@ cv.addEventListener('pointermove', e => {
   const [wx, wy] = toW(e.offsetX, e.offsetY);
   $('coords').textContent = `${state.vars[0]} = ${fmt(wx)}   ${state.vars[1]} = ${fmt(wy)}`;
   if (pointers.has(e.pointerId)) pointers.set(e.pointerId, [e.offsetX, e.offsetY]);
-  if (!drag) { showTip(e.offsetX, e.offsetY); return; }
-  if (drag.mode === 'pan') {
+  if (!drag) {
+    showTip(e.offsetX, e.offsetY);
+    if (ixTool) { const h = ringHit(e.offsetX, e.offsetY); cv.style.cursor = h === 'move' ? 'move' : h === 'size' ? 'nwse-resize' : ''; }
+    return;
+  }
+  if (drag.mode === 'ring') ringDrag(e.offsetX, e.offsetY);
+  else if (drag.mode === 'pan') {
     view.cx = drag.view.cx - (e.offsetX - drag.x) * view.s;
     view.cy = drag.view.cy + (e.offsetY - drag.y) * view.s;
     requestDraw(true);
@@ -1006,11 +1154,12 @@ cv.addEventListener('pointermove', e => {
 const endPointer = e => {
   pointers.delete(e.pointerId);
   if (drag && drag.mode === 'traj' && preview) { state.seeds.push(preview.seed); preview = null; requestDraw(true); }
+  if (drag && drag.mode === 'ring' && drag.kind === 'new' && state.ring.r < 3 * view.s) ringAbandon();
   if (pointers.size === 0) drag = null;
   else if (drag && drag.mode === 'pinch') drag = null;
 };
 cv.addEventListener('pointerup', endPointer);
-cv.addEventListener('pointercancel', e => { preview = null; endPointer(e); requestDraw(); });
+cv.addEventListener('pointercancel', e => { preview = null; if (drag && drag.mode === 'ring') { ringAbandon(); drag = null; } endPointer(e); requestDraw(); });
 cv.addEventListener('pointerleave', () => { hideTip(); $('coords').textContent = ''; });
 cv.addEventListener('wheel', e => {
   e.preventDefault();
@@ -1066,6 +1215,7 @@ document.addEventListener('keydown', e => {
   else if (k === 'c') { state.seeds = []; requestDraw(true); }
   else if (k === 'z') { state.seeds.pop(); requestDraw(true); }
   else if (k === 'b') setBif(!bif.on);
+  else if (k === 'i') setIndexTool(!ixTool);
   else if (LAYERS.some(l => l.k === k)) toggleLayer(k);
   else return;
   e.preventDefault();
@@ -1090,6 +1240,7 @@ function loadPreset(p) {
   bif.coord = p.polar ? 'r' : 'x';
   state.g = p.g; state.E = p.E || '';
   state.seeds = [];
+  state.ring = null;
   for (const [n, [v, min, max]] of Object.entries(p.params || {})) state.params[n] = { v, min, max };
   paramKey = '';
   writeFields();
@@ -1114,6 +1265,7 @@ function saveURL() {
     const r6 = v => +v.toPrecision(6);
     q.set('view', [view.cx, view.cy, radius()].map(r6).join(','));
     if (state.seeds.length) q.set('t', state.seeds.map(s => s.map(r6).join(',')).join(';'));
+    if (state.ring && state.ring.r > 0) q.set('ix', [state.ring.x, state.ring.y, state.ring.r].map(r6).join(','));
     q.set('L', LAYERS.filter(l => state.layers[l.k]).map(l => l.k).join(''));
     history.replaceState(null, '', '#' + q.toString());
   }, 250);
@@ -1134,6 +1286,8 @@ function loadURL() {
     state.params[n] = { v: +v, min: +min, max: +max };
   }
   state.seeds = (q.get('t') || '').split(';').filter(Boolean).map(s => s.split(',').map(Number));
+  const [ixx, ixy, ixr] = (q.get('ix') || '').split(',').map(Number);
+  state.ring = isFinite(ixx) && isFinite(ixy) && ixr > 0 ? { x: ixx, y: ixy, r: ixr } : null;
   if (q.has('L')) { const L = q.get('L'); for (const l of LAYERS) state.layers[l.k] = L.includes(l.k); }
   const [cx, cy, r] = (q.get('view') || '0,0,3').split(',').map(Number);
   setRadius(cx, cy, r);

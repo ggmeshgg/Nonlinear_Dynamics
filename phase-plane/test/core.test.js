@@ -4,8 +4,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  P, use, compileLatex, buildModel, fx, gy, jac, trajectory, symbolicDiv, detectStructure, equilibria,
-  buildCRN, bifSweep, findCycles, polarCycleFn,
+  P, use, compileLatex, buildModel, fx, gy, jac, trajectory, symbolicDiv, detectStructure, equilibria, fpTable,
+  buildCRN, bifSweep, findCycles, polarCycleFn, circleIndex, enclosedIndex,
 } from '../core.js';
 
 // compile ẋ = f, ẏ = g (ṙ, θ̇ when polar) the way the page does, and make it the current system
@@ -131,6 +131,7 @@ test('ẋ = sin πx, ẏ = sin πy: every lattice point in view, typed by parity
   const { fps } = analyze(win(1.5, 1.5, 2));   // x, y ∈ [−0.5, 3.5]: 4 × 4 points
   const seen = fps.filter(p => p.inView);
   assert.equal(seen.length, 16);
+  assert.deepEqual([fpTable(fps).count, fpTable(fps).curve], ['16', 0]);   // isolated points are counted one by one
   for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) {
     const p = near(fps, i, j);
     assert.ok(p, `(${i}, ${j}) found`);
@@ -147,6 +148,12 @@ test('ẋ = x(1−x−y), ẏ = y(1−x−y): isolated origin plus the line x + 
   const line = fps.filter(p => p.inView && !(Math.abs(p.x) < 1e-6 && Math.abs(p.y) < 1e-6));
   assert.ok(line.length >= 6);
   for (const p of line) { assert.equal(p.stab, 'degen'); close(p.x + p.y, 1, 1e-6); }
+  // the sidebar lists the origin and one curve, and counts them that way, not every sampled point of the line
+  const t = fpTable(fps);
+  assert.equal(t.rows.length, 1);
+  assert.ok(near(t.rows.map(([p]) => p), 0, 0));
+  assert.equal(t.curve, line.length);
+  assert.equal(t.count, '1 + curve');
 });
 
 test('pendulum: nonlinear center at 0 because it is Hamiltonian, saddles at ±π', () => {
@@ -309,6 +316,170 @@ test('no limit cycles or Hopf points in systems with a family of closed orbits',
     assert.equal(d.cyc.flat().length, 0);
     assert.deepEqual(marks(d, 'H'), []);
   });
+});
+
+// ---------- index of a closed curve ----------
+
+test('index on a circle around one fixed point (Strogatz 6.8)', async t => {
+  const cases = [
+    ['stable node', '-x', '-y', 1],
+    ['unstable node', 'x', 'y', 1],
+    ['center', '-y', 'x', 1],
+    ['stable spiral', '-x-y', 'x-y', 1],
+    ['saddle', 'x', '-y', -1],
+    // the field as z² and z³ turns twice and three times; as the conjugate z̄² it turns backwards
+    ['z²', 'x^2-y^2', '2xy', 2],
+    ['z³', 'x^3-3xy^2', '3x^2y-y^3', 3],
+    ['conjugate of z²', 'x^2-y^2', '-2xy', -2],
+  ];
+  for (const [name, f, g, want] of cases) await t.test(name, () => {
+    load(f, g);
+    assert.equal(circleIndex(0, 0, 1).index, want);
+    assert.equal(circleIndex(0.1, -0.2, 0.7).index, want);   // the circle need not be centred on the point
+  });
+});
+
+test('index is 0 on a circle with no fixed point inside', () => {
+  load('1', '0');
+  assert.equal(circleIndex(0, 0, 1).index, 0);
+  load('x', 'y');
+  assert.equal(circleIndex(3, 0, 1).index, 0);
+});
+
+test('index on a circle adds up the fixed points inside', async t => {
+  // rabbits vs sheep: (0,0), (0,2), (3,0) are nodes, (1,1) a saddle
+  await t.test('rabbits vs sheep', () => {
+    load('x(3-x-2y)', 'y(2-x-y)');
+    assert.equal(circleIndex(1, 1, 0.5).index, -1);
+    assert.equal(circleIndex(3, 0, 0.5).index, 1);
+    const all = enclosedIndex(1.5, 1, 3);
+    assert.equal(circleIndex(1.5, 1, 3).index, 2);
+    assert.deepEqual([all.fps.length, all.sum, all.unknown], [4, 2, 0]);
+  });
+  // pitchfork: for μ = 1, a saddle between two nodes; for μ = −1, one node. The sum does not change.
+  await t.test('pitchfork keeps the index across the bifurcation', () => {
+    load('\\mu x-x^3', '-y', { params: { mu: 1 } });
+    assert.equal(circleIndex(0, 0, 2).index, 1);
+    assert.equal(enclosedIndex(0, 0, 2).sum, 1);
+    assert.equal(circleIndex(0, 0, 0.5).index, -1);
+    P.mu = -1;
+    assert.equal(circleIndex(0, 0, 2).index, 1);
+    assert.equal(enclosedIndex(0, 0, 2).fps.length, 1);
+  });
+  // saddle-node: node + saddle = 0 before, and the merged point at μ = 0 has index 0, which the Jacobian cannot tell
+  await t.test('saddle-node', () => {
+    load('\\mu-x^2', '-y', { params: { mu: 0.25 } });
+    assert.equal(circleIndex(0, 0, 2).index, 0);
+    assert.equal(circleIndex(0.5, 0, 0.3).index, 1);
+    assert.equal(circleIndex(-0.5, 0, 0.3).index, -1);
+    P.mu = 0;
+    assert.equal(circleIndex(0, 0, 1).index, 0);
+    const e = enclosedIndex(0, 0, 1);
+    assert.deepEqual([e.fps.length, e.unknown], [1, 1]);
+  });
+});
+
+test('a closed orbit has index +1', async t => {
+  await t.test('on the limit cycle itself: ṙ = r(1 − r²), θ̇ = 1, r = 1', () => {
+    load('r(1-r^2)', '1', { polar: true });
+    assert.equal(circleIndex(0, 0, 1).index, 1);
+  });
+  await t.test('a θ̇ that depends on θ: the origin is not C¹, the winding still exists', () => {
+    load('r(1-r^2)', '2-\\sin\\theta', { polar: true });
+    assert.equal(circleIndex(0, 0, 0.5).index, 1);
+  });
+});
+
+test('a circle through a fixed point has no index', async t => {
+  await t.test('sampled exactly: ẋ = x, ẏ = y, the circle of radius 1 about (1, 0) passes through the origin', () => {
+    load('x', 'y');
+    const r = circleIndex(1, 0, 1);
+    assert.equal(r.index, null);
+    assert.equal(r.fail.kind, 'fixed');
+    close(r.fail.x, 0, 1e-6); close(r.fail.y, 0, 1e-6);
+  });
+  await t.test('between samples: the same through (−1, −0.3), a point no sample lands on', () => {
+    load('x+1', 'y+0.3');
+    const r = circleIndex(0, 0, Math.hypot(1, 0.3));
+    assert.equal(r.index, null);
+    assert.equal(r.fail.kind, 'fixed');
+    close(r.fail.x, -1, 1e-6); close(r.fail.y, -0.3, 1e-6);
+  });
+  // the field stays in the first quadrant, so the angle shows nothing; only |field| going to 0 gives it away
+  await t.test('a zero of even order, where the direction does not change: ẋ = x², ẏ = y²', async t => {
+    load('x^2', 'y^2');
+    for (const [cx, cy, R] of [[1, 0, 1], [-1, 0, 1], [0, 1, 1], [0.6, 0.8, 1]]) {
+      const r = circleIndex(cx, cy, R);
+      assert.equal(r.index, null, `about (${cx}, ${cy})`);
+      assert.equal(r.fail.kind, 'fixed');
+      close(r.fail.x, 0, 1e-5); close(r.fail.y, 0, 1e-5);
+    }
+    load('(x+1)^2', '(y+0.3)^2');
+    assert.equal(circleIndex(0, 0, Math.hypot(1, 0.3)).fail.kind, 'fixed');
+    // and clear of it there is a number: inside or out, this field never turns
+    load('x^2', 'y^2');
+    assert.equal(circleIndex(1, 0, 0.99).index, 0);
+    assert.equal(circleIndex(1, 0, 1.01).index, 0);
+  });
+  await t.test('a whole circle of fixed points: (x² + y² − 1)(x, y) on r = 1', () => {
+    load('(x^2+y^2-1)x', '(x^2+y^2-1)y');
+    const r = circleIndex(0, 0, 1);
+    assert.equal(r.index, null);
+    assert.equal(r.fail.kind, 'fixed');
+  });
+});
+
+test('a fixed point just off the circle is on the right side of it', () => {
+  load('x', 'y');
+  assert.equal(circleIndex(1, 0, 1 - 1e-6).index, 0);
+  assert.equal(circleIndex(1, 0, 1 + 1e-6).index, 1);
+  assert.equal(circleIndex(1, 0.5, Math.hypot(1, 0.5) - 1e-7).index, 0);
+  assert.equal(circleIndex(1, 0.5, Math.hypot(1, 0.5) + 1e-7).index, 1);
+});
+
+test('a field undefined or jumping on the circle has no index', async t => {
+  const singular = (f, g, cx, cy, R) => {
+    load(f, g);
+    const r = circleIndex(cx, cy, R);
+    assert.equal(r.index, null);
+    assert.equal(r.fail.kind, 'singular');
+    return r;
+  };
+  await t.test('a pole: ẋ = 1/x', () => { close(singular('\\frac{1}{x}', '1', 0, 0.2, 1).fail.x, 0, 1e-6); });
+  await t.test('a jump: ẋ = sign x', () => { close(singular('\\operatorname{sign}(x)', '1', 0, 0.2, 1).fail.x, 0, 1e-6); });
+  await t.test('a pole of even order, where the direction does not change: ẋ = ẏ = 1/x²', () => {
+    close(singular('\\frac{1}{x^2}', '\\frac{1}{x^2}', 0, 0.2, 1).fail.x, 0, 1e-5);
+  });
+  await t.test('outside the domain: ẋ = ln x, for x < 0', () => { singular('\\ln x', 'y', 0, 0, 1.2); });
+  await t.test('ln x is fine where it is defined: the point (1, 0) has index +1', () => {
+    load('\\ln x', 'y');
+    assert.equal(circleIndex(1, 0, 0.5).index, 1);
+  });
+});
+
+test('a pole inside is not a fixed point, so the index and the sum disagree', () => {
+  load('\\frac{x}{x^2+y^2}', '\\frac{y}{x^2+y^2}');
+  assert.equal(circleIndex(0, 0, 1).index, 1);
+  const e = enclosedIndex(0, 0, 1);
+  assert.deepEqual([e.fps.length, e.sum], [0, 0]);
+});
+
+test('a field turning fast is followed or refused, never miscounted', async t => {
+  // ṙ = cos mθ, θ̇ = sin(mθ)/r gives the field the angle (m + 1)θ, so index m + 1 on any circle about the origin
+  const turning = m => { load(`\\cos(${m}\\theta)`, `\\frac{\\sin(${m}\\theta)}{r}`, { polar: true }); return circleIndex(0, 0, 1); };
+  await t.test('61 turns', () => assert.equal(turning(60).index, 61));
+  await t.test('300 turns', () => assert.equal(turning(299).index, 300));
+  const refused = m => { const r = turning(m); assert.equal(r.index, null); assert.equal(r.fail.kind, 'fast'); };
+  // exactly one turn per sample of the first pass: those samples all agree and see a constant field
+  await t.test('720 turns, in step with the first pass', () => refused(719));
+  // both passes alias, to −40 and −45 turns: each alone would give a wrong number
+  await t.test('5000 turns, aliased in both passes', () => refused(4999));
+  await t.test('more turns than the budget', () => refused(49999));
+});
+
+test('a circle of no radius has no index', () => {
+  load('x', 'y');
+  assert.deepEqual(circleIndex(1, 1, 0), { index: null, fail: null });
 });
 
 // ---------- reaction networks ----------
