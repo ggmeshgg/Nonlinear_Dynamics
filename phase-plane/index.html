@@ -238,7 +238,7 @@ import { MathfieldElement } from 'https://cdn.jsdelivr.net/npm/mathlive@0.111.1/
 import {
   P, use, symTex, symHtml, compileLatex, factorTex, buildModel, fmt,
   fx, gy, trajectory, sampleGrid, contour, interpGrid, hamiltonianGrid,
-  detectStructure, equilibria, fpTable, buildCRN, project, bifSweep, circleIndex, fpIndex, enclosedIndex,
+  detectStructure, equilibria, fpTable, buildCRN, project, bifSweep, circleIndex, fpIndex, fmtIndex, enclosedIndex,
 } from './core.js';
 
 MathfieldElement.fontsDirectory = 'https://cdn.jsdelivr.net/npm/mathlive@0.111.1/fonts/';
@@ -714,7 +714,6 @@ function drawFP(c, x, y, p, C, r) {
 // The number comes from circleIndex in core.js; here it is placed, drawn and explained.
 
 let ixTool = false, ixDirty = false, ix = null;   // ix: circleIndex result plus .inside, from enclosedIndex
-const fmtIndex = k => k > 0 ? `+${k}` : k < 0 ? `−${-k}` : '0';
 
 function setIndexTool(on) {
   ixTool = on;
@@ -864,7 +863,14 @@ function drawTD(C) {
 
 // ---------- sidebar output ----------
 
-const fmtEigs = e => !e ? 'n/a' : Array.isArray(e[0]) ? `${Math.abs(e[0][0]) < 1e-9 ? '' : fmt(e[0][0]) + ' '}± ${fmt(Math.abs(e[0][1]))}i` : e.map(fmt).join(', ');
+const fmtEigs = e => {
+  if (!e) return 'n/a';
+  if (Array.isArray(e[0])) return `${e[0][0] === 0 ? '' : fmt(e[0][0], Math.abs(e[0][1])) + ' '}± ${fmt(Math.abs(e[0][1]), 0)}i`;
+  const sc = Math.max(Math.abs(e[0]), Math.abs(e[1]));
+  return e.map(v => fmt(v, sc)).join(', ');
+};
+// a coordinate is small against the window, not against 1: rounding noise prints as 0, and deep zoom still reads
+const fmtXY = p => `(${fmt(p.x, radius())}, ${fmt(p.y, radius())})`;
 
 let lastSide = '', lastCRN = '';
 function renderCRN() {
@@ -901,7 +907,7 @@ function renderSidebar() {
     const { rows, curve } = fpTable(an.fps);
     fps = rows.map(([p, i]) => `<tr data-i="${i}"><td><span class="dot" style="border-color:${fpColor(p, C)};background:${p.stab === 'stable' || p.stab === 'saddle' ? fpColor(p, C) : 'transparent'}"></span></td>
       <td>${p.type}${p.note ? `<br><span class="help">${p.note}</span>` : ''}</td>
-      <td class="num">(${fmt(p.x)}, ${fmt(p.y)})<br>λ = ${fmtEigs(p.eig)}</td></tr>`).join('');
+      <td class="num">${fmtXY(p)}<br>λ = ${fmtEigs(p.eig)}</td></tr>`).join('');
     if (curve) fps += `<tr><td><span class="dot" style="border-color:${C['fp-degen']}"></span></td><td colspan="2">curve of fixed points (Δ = 0 everywhere on it)<br><span class="help">${curve} points sampled in view; the linearization is inconclusive along it</span></td></tr>`;
   }
   renderCRN();
@@ -1188,7 +1194,7 @@ function showTip(px, py) {
   const p = an.fps.find(q => { const [sx, sy] = toS(q.x, q.y); return Math.hypot(sx - px, sy - py) < 10; });
   if (!p) return hideTip();
   tip.innerHTML = `<b>${p.type}</b>${p.note ? `<br><span style="color:var(--muted)">${p.note}</span>` : ''}
-    <div class="num">(${fmt(p.x)}, ${fmt(p.y)})${p.eig ? `<br>J = [${fmt(p.J[0])}, ${fmt(p.J[1])}; ${fmt(p.J[2])}, ${fmt(p.J[3])}]<br>τ = ${fmt(p.tau)}, Δ = ${fmt(p.det)}, τ²−4Δ = ${fmt(p.disc)}<br>λ = ${fmtEigs(p.eig)}` : ''}</div>`;
+    <div class="num">${fmtXY(p)}${p.eig ? `<br>J = [${fmt(p.J[0])}, ${fmt(p.J[1])}; ${fmt(p.J[2])}, ${fmt(p.J[3])}]<br>τ = ${fmt(p.tau)}, Δ = ${fmt(p.det)}, τ²−4Δ = ${fmt(p.disc)}<br>λ = ${fmtEigs(p.eig)}` : ''}</div>`;
   tip.style.display = 'block';
   const r = tip.getBoundingClientRect();
   tip.style.left = Math.min(px + 14, W - r.width - 8) + 'px';
