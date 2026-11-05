@@ -588,6 +588,105 @@ function fpTable(fps) {
   return { rows, curve, count: curve ? (rows.length ? `${rows.length} + curve` : 'curve') : `${rows.length}` };
 }
 
+// ---------- index of a closed curve ----------
+// I = (1/2π) ∮ dφ with φ = atan2(ẏ, ẋ): the net turns of the field on one counterclockwise trip round the curve
+// (Strogatz 6.8). It only exists if the field is continuous and nonzero on the curve, so a circle through a fixed
+// point or a pole gets no number. Arcs are halved until φ moves by less than IX_STEP on each: a fixed point just
+// off the circle turns the field fast over a short arc, and the halving decides which side it is on.
+
+const IX_STEP = 0.5, IX_EVALS = 3e5;
+
+// one trip with N starting samples: { index } or { fail: { kind, x, y } }
+function windingOn(cx, cy, R, N) {
+  const floor = Math.max(1e-10, 8 * Number.EPSILON * (Math.abs(cx) + Math.abs(cy) + R) / R);
+  let evals = 0;
+  const at = t => {
+    evals++;
+    const x = cx + R * Math.cos(t), y = cy + R * Math.sin(t), f = fx(x, y), g = gy(x, y);
+    return { t, x, y, f, g, phi: Math.atan2(g, f), m: Math.hypot(f, g) };
+  };
+  // the field stopped behaving at q: a fixed point if it is small there compared with close by, off the curve too
+  const fail = q => {
+    if (isFinite(q.m)) {
+      const d = 1e-3;
+      const around = [[R, q.t - d], [R, q.t + d], [R * (1 - d), q.t], [R * (1 + d), q.t]].map(([r, t]) => {
+        const x = cx + r * Math.cos(t), y = cy + r * Math.sin(t);
+        return Math.hypot(fx(x, y), gy(x, y));
+      }).filter(isFinite);
+      if (around.length && q.m <= 1e-2 * Math.max(...around)) return { fail: { kind: 'fixed', x: q.x, y: q.y } };
+    }
+    return { fail: { kind: 'singular', x: q.x, y: q.y } };
+  };
+  // The angle cannot see a zero or pole of even order: ẋ = x², ẏ = y² keeps its direction through the origin.
+  // |field| can: golden-section search on each sharp dip (val = m) or peak (val = 1/m) between samples a, b, c.
+  const spike = (a, b, c) => {
+    for (const val of [q => q.m, q => 1 / q.m]) {
+      const near = Math.min(val(a), val(c));
+      if (!(val(b) <= near && val(b) * 1.1 < Math.max(val(a), val(c)))) continue;
+      const G = (Math.sqrt(5) - 1) / 2;
+      let lo = a.t, hi = c.t, p = at(hi - G * (hi - lo)), r = at(lo + G * (hi - lo));
+      for (let it = 0; it < 60; it++) {
+        for (const q of [p, r]) if (!isFinite(q.m) || q.m === 0) return fail(q);
+        if (val(p) < val(r)) { hi = r.t; r = p; p = at(hi - G * (hi - lo)); }
+        else { lo = p.t; p = r; r = at(lo + G * (hi - lo)); }
+      }
+      const best = val(p) < val(r) ? p : r;
+      if (val(best) <= 1e-12 * near) return fail(best);
+    }
+    return null;
+  };
+  const first = at(0);
+  if (!isFinite(first.m) || first.m === 0) return fail(first);
+  let turned = 0, prev = first, before = null, second = null;
+  for (let k = 1; k <= N; k++) {
+    // the last arc ends on the first sample itself, so the turns add up to a whole number
+    const stack = [k === N ? { ...first, t: 2 * Math.PI } : at(2 * Math.PI * k / N)];
+    while (stack.length) {
+      const q = stack[stack.length - 1];
+      if (!isFinite(q.m) || q.m === 0) return fail(q);
+      let d = q.phi - prev.phi;
+      if (d > Math.PI) d -= 2 * Math.PI; else if (d < -Math.PI) d += 2 * Math.PI;
+      if (Math.abs(d) < IX_STEP) {
+        if (before) { const s = spike(before, prev, q); if (s) return s; }
+        turned += d; before = prev; prev = q; second ??= q; stack.pop();
+        continue;
+      }
+      if (q.t - prev.t < floor) return fail(q.m < prev.m ? q : prev);
+      if (evals > IX_EVALS) return { fail: { kind: 'fast' } };
+      stack.push(at((prev.t + q.t) / 2));
+    }
+    if (evals > IX_EVALS) return { fail: { kind: 'fast' } };
+  }
+  const s = spike({ ...before, t: before.t - 2 * Math.PI }, first, second);   // the dip at the seam itself
+  if (s) return s;
+  return { index: Math.round(turned / (2 * Math.PI)) + 0 };
+}
+
+// The index on the circle, or index: null and why not (kind 'fixed', 'singular', or 'fast' when the field turns too
+// quickly to follow). A field that turns a whole number of times between samples looks constant, so two different
+// sample counts must agree.
+function circleIndex(cx, cy, R) {
+  if (!(R > 0)) return { index: null, fail: null };
+  const a = windingOn(cx, cy, R, 720);
+  if (a.fail) return { index: null, fail: a.fail };
+  const b = windingOn(cx, cy, R, 1009);
+  if (b.fail) return { index: null, fail: b.fail };
+  return a.index === b.index ? { index: a.index, fail: null } : { index: null, fail: { kind: 'fast' } };
+}
+
+// a fixed point's own index from its linearization: null where that says nothing (Δ = 0, or no Jacobian)
+const fpIndex = p => p.stab === 'saddle' ? -1 : p.stab === 'degen' || !isFinite(p.det) ? null : 1;
+
+// The fixed points inside the circle and the sum of their indices, which the index on the circle must equal
+// unless something inside was missed. `unknown` counts those fpIndex cannot say anything about.
+function enclosedIndex(cx, cy, R, st = {}) {
+  const b = { x0: cx - R, x1: cx + R, y0: cy - R, y1: cy + R };
+  const fps = equilibria(b, 65, 65, st).fps.filter(p => Math.hypot(p.x - cx, p.y - cy) < R);
+  let sum = 0, unknown = 0;
+  for (const p of fps) { const i = fpIndex(p); if (i === null) unknown++; else sum += i; }
+  return { fps, sum, unknown };
+}
+
 // ---------- mass-action reaction network ----------
 // Hárs–Tóth: a polynomial system is realizable iff every negative term in ẋ contains x (and likewise for y).
 // Signs of parameter-dependent coefficients come from the current slider values.
@@ -819,5 +918,6 @@ export {
   fx, gy, jac, findFixedPoints, classify, integrateDP, integrateIM, trajectory,
   sampleGrid, contour, interpGrid, crossings, hamiltonianGrid,
   symbolicDiv, detectStructure, centerReason, equilibria, fpTable, buildCRN,
+  circleIndex, fpIndex, enclosedIndex,
   project, bifSweep, findCycles, polarCycleFn, linkBranches,
 };

@@ -48,6 +48,17 @@ Site: https://ggmeshgg.github.io/Nonlinear_Dynamics/phase-plane/
   θ̇ keeps one sign on that circle (otherwise it is an invariant circle carrying
   fixed points, not a cycle); unstable cycles are shown too. Dragging in the
   diagram sets the parameter.
+- **Index** (key I). Press at a center and drag out the radius; drag the rim or
+  the center to adjust, and a press on a fixed point centers on it exactly. The
+  index is the net number of turns of the field on one counterclockwise trip
+  round the circle. Arcs are halved until the field's angle moves by less than
+  0.5 rad on each, so a fixed point just off the circle counts on the correct
+  side. A circle through a fixed point, a pole or a jump gets no number and the
+  place is marked; zeros and poles of even order, where the direction does not
+  change, are found from sharp dips and peaks in |field|. The result is compared
+  with the sum of the indices of the fixed points found inside (saddle −1, other
+  nondegenerate points +1). A degenerate point has no index from its
+  linearization, so there is no check; a circle round it alone measures it.
 - **Reaction network.** For polynomial systems, the mass-action network that
   produces the equations, when one exists (Hárs–Tóth: no negative term in ẋ
   without x, likewise for y).
@@ -65,7 +76,10 @@ Integration-based cycles can be missed close to a Hopf point, where the
 multiplier is near 1, and unstable cycles are found only in the polar case. In
 polar form with θ̇ depending on θ the field is not C¹ at the origin; the origin is
 then classified by the sign of ṙ, without eigenvalues. Reaction-network signs
-use the current slider values.
+use the current slider values. The index samples the circle at two different
+resolutions and refuses to answer if they disagree or if the field needs too
+many samples, but a field that wiggles faster than both can still be misread.
+A curve closer than about 10⁻¹⁰ R to a fixed point counts as passing through it.
 
 ## Code and tests
 
@@ -79,7 +93,9 @@ the bifurcation sweep. `index.html` holds the interface and drawing and imports
 rather than from the program's own output: equilibria and their types, which
 systems are Hamiltonian or reversible, Van der Pol's cycle (amplitude 2.01,
 period 6.663 at μ = 1), the √μ Hopf branch, fold, branch and Hopf points at
-their exact parameter values, no limit cycles in conservative systems. A change
+their exact parameter values, no limit cycles in conservative systems, the index
+of each kind of point and of zⁿ, its sum across a bifurcation, and no number on a
+circle through a fixed point or a pole. A change
 to the mathematics comes with a test of this kind.
 
 ```sh
