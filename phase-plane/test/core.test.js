@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   P, use, compileLatex, buildModel, fx, gy, jac, trajectory, symbolicDiv, detectStructure, equilibria, fpTable,
-  buildCRN, bifSweep, findCycles, polarCycleFn, circleIndex, enclosedIndex,
+  buildCRN, bifSweep, findCycles, polarCycleFn, circleIndex, enclosedIndex, checkIndices, fmt,
 } from '../core.js';
 
 // compile ẋ = f, ẏ = g (ṙ, θ̇ when polar) the way the page does, and make it the current system
@@ -38,6 +38,124 @@ test('a parameter written like a function multiplies: μ(1−x²)y − x', () =>
   load('y', '\\mu(1-x^2)y-x', { params: { mu: 2 } });
   close(gy(0.5, 1), 2 * 0.75 * 1 - 0.5, 1e-12);
   close(fx(0.5, 1), 1, 0);
+});
+
+test('a power belongs to the bracket next to it: a(x−b)² is a·(x−b)², and (a(x−b))² is not', () => {
+  const a = 2, b = 3, x = 4.5, y = 0.7, u = x - b;
+  for (const [tex, want] of [
+    ['a(x-b)^2', a * u ** 2],
+    ['a\\left(x-b\\right)^2', a * u ** 2],
+    ['a(x-b)^{2}', a * u ** 2],
+    ['a(x-b)^3', a * u ** 3],
+    ['2a(x-b)^2', 2 * a * u ** 2],
+    ['-a(x-b)^2', -a * u ** 2],
+    ['\\mu(x-b)^2', a * u ** 2],
+    ['k_1(x-b)^2', a * u ** 2],
+    ['a(x+1)^2(x-b)', a * (x + 1) ** 2 * u],
+    ['a(x-b)(x+1)^2', a * u * (x + 1) ** 2],
+    ['a(x-b)^2+a', a * u ** 2 + a],
+    ['a+a(x-b)', a + a * u],
+    ['\\frac{a(x-b)^2}{2}', a * u ** 2 / 2],
+    ['\\frac{y^2}{2}+a(x-b)^2', y * y / 2 + a * u ** 2],
+    ['e^{-a(x-b)^2}', Math.exp(-a * u ** 2)],
+    ['a(b(x-1)^2)^2', a * (b * (x - 1) ** 2) ** 2],
+    // brackets round the whole product do square the parameter; a power on the parameter stays on it
+    ['(a(x-b))^2', (a * u) ** 2],
+    ['a^2(x-b)', a * a * u],
+    // the variables already worked this way
+    ['x(x-b)^2', x * u ** 2],
+    ['2(x-b)^2', 2 * u ** 2],
+  ]) {
+    load(tex, '0', { params: { a, b, mu: a, k_1: a } });
+    close(fx(x, y), want, 1e-9 * Math.max(1, Math.abs(want)), tex);
+  }
+});
+
+test('random expressions mean what they were built to mean', () => {
+  // Each is built twice, as LaTeX and as a function of the values, so the parser never sees the expected answer.
+  let s = 20261105;
+  const rnd = () => { s = (s + 0x6D2B79F5) >>> 0; let t = s; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+  const pick = a => a[Math.floor(rnd() * a.length)];
+  const NAMES = [['a', 'a'], ['b', 'b'], ['k', 'k'], ['\\mu', 'mu'], ['k_1', 'k_1']];
+  const param = () => { const [tex, n] = pick(NAMES); return { tex, val: e => e[n] }; };
+  const atom = () => pick([
+    param,
+    () => { const n = pick(['x', 'y']); return { tex: n, val: e => e[n] }; },
+    () => { const k = pick([2, 3, 5]); return { tex: String(k), val: () => k }; },
+  ])();
+  const outside = t => { let o = '', n = 0; for (const c of t) { if ('({'.includes(c)) n++; else if (')}'.includes(c)) n--; else if (!n) o += c; } return o; };
+  const operand = w => /[+-]/.test(outside(w.tex)) ? `(${w.tex})` : w.tex;
+  const sum = d => {
+    const u = expr(d - 1), v = expr(d - 1), plus = rnd() < 0.5;
+    return { tex: `${operand(u)}${plus ? '+' : '-'}${operand(v)}`, val: plus ? e => u.val(e) + v.val(e) : e => u.val(e) - v.val(e) };
+  };
+  const FORMS = [
+    d => { const p = param(), u = sum(d), n = pick([2, 3]); return { tex: `${p.tex}(${u.tex})^${n}`, val: e => p.val(e) * u.val(e) ** n }; },
+    d => { const p = param(), q = param(), u = sum(d); return { tex: `${p.tex} ${q.tex}(${u.tex})^2`, val: e => p.val(e) * q.val(e) * u.val(e) ** 2 }; },
+    d => { const p = param(), u = sum(d), v = sum(d); return { tex: `${p.tex}(${u.tex})^2(${v.tex})`, val: e => p.val(e) * u.val(e) ** 2 * v.val(e) }; },
+    d => { const p = param(), u = sum(d); return { tex: `(${p.tex}(${u.tex}))^2`, val: e => (p.val(e) * u.val(e)) ** 2 }; },
+    d => { const p = param(), u = sum(d); return { tex: `${p.tex}^2(${u.tex})`, val: e => p.val(e) ** 2 * u.val(e) }; },
+    d => { const p = param(), u = sum(d); return { tex: `${p.tex}(${u.tex})^2+${p.tex}`, val: e => p.val(e) * u.val(e) ** 2 + p.val(e) }; },
+    d => { const p = param(), u = sum(d); return { tex: `${p.tex}(${u.tex})`, val: e => p.val(e) * u.val(e) }; },
+    d => { const u = sum(d), v = sum(d); return { tex: `(${u.tex})(${v.tex})`, val: e => u.val(e) * v.val(e) }; },
+    d => { const u = expr(d - 1), v = expr(d - 1); return { tex: `\\frac{${u.tex}}{${v.tex}}`, val: e => u.val(e) / v.val(e) }; },
+    d => { const u = expr(d - 1); return { tex: `\\sin(${u.tex})`, val: e => Math.sin(u.val(e)) }; },
+    d => { const u = expr(d - 1); return { tex: `e^{${u.tex}}`, val: e => Math.exp(u.val(e)) }; },
+  ];
+  const expr = d => d <= 0 || rnd() < 0.15 ? atom() : pick(FORMS)(d);
+  let checked = 0;
+  for (let i = 0; i < 600; i++) {
+    const ex = pick(FORMS)(2), c = compileLatex(ex.tex, ['x', 'y']);
+    for (let t = 0; t < 6; t++) {
+      const e = { x: rnd() * 4 - 1.9, y: rnd() * 4 - 1.9 };
+      for (const [, n] of NAMES) e[n] = 0.3 + rnd() * 3;
+      const want = ex.val(e);
+      if (!isFinite(want) || Math.abs(want) > 1e12) continue;
+      checked++;
+      close(c.fn(e.x, e.y, e), want, 1e-9 * Math.max(1, Math.abs(want)), ex.tex);
+    }
+  }
+  assert.ok(checked > 2000, `only ${checked} values compared`);
+});
+
+test('U = a(x−b)²: energy is conserved for every a, b; a wrong E and damping are told apart', () => {
+  const E = '\\frac{y^2}{2}+a(x-b)^2';
+  for (const [a, b] of [[1, 1], [2, 3], [0.5, 2], [7, 0.3]]) {
+    load('y', '-2a(x-b)', { E, params: { a, b } });
+    const box = win(b, 0, 3 + b), { st, fps } = analyze(box);
+    assert.equal(st.hamiltonian, true, `a=${a} b=${b}`);
+    assert.equal(st.E.conserved, true, `a=${a} b=${b}`);
+    assert.equal(fps.length, 1);
+    close(fps[0].x, b, 1e-9);
+    close(fps[0].y, 0, 1e-9);
+    assert.equal(fps[0].type, 'nonlinear center');
+  }
+  // dE/dt = 2a·b·y for this E: both signs, and it must say so
+  load('y', '-2a(x-b)', { E: '\\frac{y^2}{2}+ax^2', params: { a: 2, b: 3 } });
+  let st = detectStructure(win(3, 0, 6));
+  assert.equal(st.E.conserved, false);
+  assert.ok(st.E.pos > 50 && st.E.neg > 50);
+  // dE/dt = −c y² ≤ 0: not conserved, and never positive
+  load('y', '-2a(x-b)-cy', { E, params: { a: 2, b: 3, c: 0.1 } });
+  st = detectStructure(win(3, 0, 6));
+  assert.equal(st.hamiltonian, false);
+  assert.equal(st.E.conserved, false);
+  assert.equal(st.E.pos, 0);
+  assert.ok(st.E.neg > 50);
+});
+
+test('the divergence and the reaction network read a(x−b)² the same way', () => {
+  // div = ∂/∂x a(x−b)² = 2a(x−b)
+  load('a(x-b)^2', '0', { params: { a: 2, b: 3 } });
+  const sd = symbolicDiv();
+  assert.equal(sd.zero, false);
+  close(sd.fn(4.5, 0, P), 2 * 2 * 1.5, 1e-9);
+  // a(x−b)² = a x² − 2ab x + ab²
+  const m = compileLatex('a(x-b)^2', ['x', 'y']);
+  const coeff = (deg, key) => m.poly.filter(t => t.a === deg && t.b === 0 && t.key === key).reduce((s, t) => s + t.n, 0);
+  close(coeff(2, '"a"^1'), 1, 1e-12);
+  close(coeff(1, '"a"^1*"b"^1'), -2, 1e-12);
+  close(coeff(0, '"a"^1*"b"^2'), 1, 1e-12);
 });
 
 test('polar ṙ, θ̇ become ẋ, ẏ', () => {
@@ -375,7 +493,7 @@ test('index on a circle adds up the fixed points inside', async t => {
     P.mu = 0;
     assert.equal(circleIndex(0, 0, 1).index, 0);
     const e = enclosedIndex(0, 0, 1);
-    assert.deepEqual([e.fps.length, e.unknown], [1, 1]);
+    assert.deepEqual([e.fps.length, e.fps[0].stab, e.sum, e.unknown], [1, 'degen', 0, 0]);   // measured on a small circle
   });
 });
 
@@ -480,6 +598,192 @@ test('a field turning fast is followed or refused, never miscounted', async t =>
 test('a circle of no radius has no index', () => {
   load('x', 'y');
   assert.deepEqual(circleIndex(1, 1, 0), { index: null, fail: null });
+});
+
+// ---------- labels must not depend on anything but the system ----------
+// The answer for each system comes from algebra. It must hold wherever the window sits and however far it is zoomed,
+// with the point at the origin or not: Newton stops at a different place for each, and that must not show.
+
+const WINDOWS = [3, 1, 0.1, 0.015, 1e-3, 1e-5];
+const OFFSETS = [[0.13, 0.07], [-0.21, 0.11], [0.05, -0.31], [-0.17, -0.09]];
+const SHIFTS = [[0, 0], [0.3, -0.7]];
+
+// the system translated to (a, b), so that exact arithmetic at the origin cannot flatter it
+function loadAt(f, g, a, b) {
+  const m = load(f, g), f0 = m.f, g0 = m.g;
+  m.f = (x, y, P) => f0(x - a, y - b, P); m.g = (x, y, P) => g0(x - a, y - b, P);
+  return m;
+}
+function labelsEverywhere(f, g, fn) {
+  for (const [a, b] of SHIFTS) {
+    loadAt(f, g, a, b);
+    for (const r of WINDOWS) for (const [ox, oy] of OFFSETS) {
+      const t = fpTable(equilibria(win(a + ox * r, b + oy * r, r), 101, 101, {}).fps);
+      fn(t, t.rows.map(([p]) => p), `shift ${a},${b} r=${r} off ${ox},${oy}`);
+    }
+  }
+}
+
+test('a point with no usable linearization is one degenerate point, at every zoom', async t => {
+  const cases = [
+    ['z² (the spiral that was not)', 'x^2-y^2', '2xy', 2],
+    ['z³', 'x^3-3xy^2', '3x^2y-y^3', 3],
+    ['conjugate of z²', 'x^2-y^2', '-2xy', -2],
+    ['ẋ = x², ẏ = y²', 'x^2', 'y^2', 0],
+    ['saddle-node ẋ = x², ẏ = −y', 'x^2', '-y', 0],
+    ['ẋ = x³, ẏ = −y: looks like a saddle', 'x^3', '-y', -1],
+    ['ẋ = −x³, ẏ = −y: looks like a node', '-x^3', '-y', 1],
+    ['ẋ = x³, ẏ = y³', 'x^3', 'y^3', 1],
+    ['ẋ = x⁵, ẏ = y⁵', 'x^5', 'y^5', 1],
+    ['ẋ = x⁹, ẏ = −y', 'x^9', '-y', -1],
+    ['radial r²', 'x(x^2+y^2)', 'y(x^2+y^2)', 1],
+    ['radial r, C¹ with J = 0', 'x\\sqrt{x^2+y^2}', 'y\\sqrt{x^2+y^2}', 1],
+    ['rotation r²', '-y(x^2+y^2)', 'x(x^2+y^2)', 1],
+  ];
+  for (const [name, f, g, index] of cases) await t.test(name, () => {
+    labelsEverywhere(f, g, (tb, rows, where) => {
+      assert.equal(tb.curve, 0, where);
+      assert.deepEqual(rows.map(p => p.type), ['degenerate'], where);
+      assert.equal(rows[0].index, index, where);
+      assert.match(rows[0].note, /inconclusive/, where);
+    });
+  });
+});
+
+test('a corner in the field has no linearization', async t => {
+  for (const [f, g] of [['|x|+2x', 'y'], ['|x|+2x', '|y|+2y'], ['|x|', 'y']]) await t.test(`ẋ = ${f}, ẏ = ${g}`, () => {
+    labelsEverywhere(f, g, (tb, rows, where) => assert.deepEqual(rows.map(p => p.type), ['degenerate'], where));
+  });
+});
+
+test('a hyperbolic point keeps its label however small or lopsided the numbers', async t => {
+  const cases = [
+    ['stable node', '-x', '-2y', 'stable node'],
+    ['unstable spiral', 'x-y', 'x+y', 'unstable spiral'],
+    ['saddle', 'x', '-y', 'saddle'],
+    ['center', '-y', 'x', 'linear center'],
+    // the old tolerance called these degenerate: Δ is small against J, and known perfectly well
+    ['stiff node, λ = −1, −10⁻⁸', '-x', '-0.00000001y', 'stable node'],
+    ['stiff saddle, λ = 1, −10⁻⁸', 'x', '-0.00000001y', 'saddle'],
+    ['weak damping, τ = −10⁻⁵', 'y', '-x-0.00001y', 'stable spiral'],
+    // and absolute cutoffs called these nothing at all
+    ['slow field, J ~ 10⁻⁹', '-0.000000001x', '-0.000000002y', 'stable node'],
+    ['slow saddle, J ~ 10⁻¹⁴', '0.00000000000001x', '-0.00000000000001y', 'saddle'],
+  ];
+  for (const [name, f, g, want] of cases) await t.test(name, () => {
+    labelsEverywhere(f, g, (tb, rows, where) => assert.deepEqual(rows.map(p => p.type), [want], where));
+  });
+});
+
+test('a small residual is not a root', async t => {
+  const none = (f, g) => labelsEverywhere(f, g, (tb, rows, where) => { assert.equal(tb.curve, 0, where); assert.deepEqual(rows, [], where); });
+  await t.test('ẋ = e^(−x) dies away and never reaches 0', () => none('e^{-x}', 'y'));
+  await t.test('a field of size 10⁻¹² with no zero', () => none('0.000000000001(2+\\sin x)', '0.000000000001'));
+});
+
+test('two real points close together stay two, with their own labels', () => {
+  for (const mu of [1e-2, 1e-6, 1e-10, 1e-14]) {
+    load('\\mu-x^2', '-y', { params: { mu } });
+    const e = Math.sqrt(mu), fps = equilibria(win(0, 0, 3 * e), 101, 101, {}).fps.sort((p, q) => p.x - q.x);
+    assert.deepEqual(fps.map(p => p.stab), ['saddle', 'stable'], `μ = ${mu}`);
+    close(fps[0].x, -e, 1e-3 * e); close(fps[1].x, e, 1e-3 * e);
+    assert.deepEqual(fps.map(p => p.index), [-1, 1]);
+  }
+});
+
+test('a curve of fixed points is still a curve', () => {
+  load('x(1-x-y)', 'y(1-x-y)');
+  const tb = fpTable(equilibria(win(0.5, 0.5, 1.5), 101, 101, {}).fps);
+  assert.ok(tb.curve >= 6, `${tb.curve} points`);
+});
+
+test('the Jacobian does not get the last word: a label that contradicts the index is demoted', () => {
+  load('x^2-y^2', '2xy');   // index +2, and here is the label the Jacobian used to give it
+  const p = { x: 0, y: 0, type: 'unstable spiral', stab: 'unstable', det: 1, note: '' };
+  checkIndices([p], 1);
+  assert.deepEqual([p.stab, p.type, p.index], ['degen', 'degenerate', 2]);
+  assert.match(p.note, /index \+1/);
+});
+
+test('very small is not zero: the field on a circle far from its root', async t => {
+  await t.test('ẋ = x⁹, ẏ = −y is 10⁻¹⁸ at (0.01, 0), and the index is that of the root inside', () => {
+    load('x^9', '-y');
+    for (const R of [1, 0.1, 0.01, 1e-3, 1e-5]) assert.deepEqual(circleIndex(0, 0, R), { index: -1, fail: null }, `R = ${R}`);
+  });
+  await t.test('ẋ = x³, ẏ = −y', () => {
+    load('x^3', '-y');
+    for (const R of [1, 0.01, 1e-5]) assert.deepEqual(circleIndex(0, 0, R), { index: -1, fail: null }, `R = ${R}`);
+  });
+  await t.test('and a real zero is still found: the circle through the root of x⁹, −y', () => {
+    load('x^9', '-y');
+    assert.equal(circleIndex(1, 0, 1).fail.kind, 'fixed');
+  });
+});
+
+// a small deterministic generator, so that a failure can be reproduced
+const random = seed => { let s = seed; return () => (s = (s * 16807) % 2147483647) / 2147483647; };
+const useField = (f, g) => use({ f, g, E: null, used: [], vars: ['x', 'y'], polyF: [], polyG: [], crnErr: 'not symbolic', jsonF: 0, jsonG: 0 });
+
+test('random fields whose linear part is known: the label is what algebra says', () => {
+  const rnd = random(20261105), U = (a, b) => a + (b - a) * rnd();
+  const terms = [(u, w) => [u * u, u * w], (u, w) => [Math.sin(u) * w, 1 - Math.cos(w)], (u, w) => [u * u * u - w * w, Math.exp(u * w) - 1], (u, w) => [u * w * Math.cos(u), (u + w) ** 2]];
+  for (let i = 0; i < 200; i++) {
+    const sc = 10 ** U(-3, 3), [a, b, c, d] = [U(-2, 2) * sc, U(-2, 2) * sc, U(-2, 2) * sc, U(-2, 2) * sc];
+    const A = rnd() < 0.5 ? 0 : U(-2, 2), B = rnd() < 0.5 ? 0 : U(-2, 2), Q = terms[i % terms.length], q = U(-1, 1) * sc;
+    useField((x, y) => a * (x - A) + b * (y - B) + q * Q(x - A, y - B)[0], (x, y) => c * (x - A) + d * (y - B) + q * Q(x - A, y - B)[1]);
+    const r = 10 ** U(-4, 0.3), fps = equilibria(win(A + U(-0.4, 0.4) * r, B + U(-0.4, 0.4) * r, r), 81, 81, {}).fps;
+    const p = fps.find(p => Math.hypot(p.x - A, p.y - B) < 1e-7 * (1 + r)), tau = a + d, det = a * d - b * c, disc = tau * tau - 4 * det;
+    const want = det < 0 ? 'saddle' : `${tau < 0 ? 'stable' : 'unstable'} ${disc > 0 ? 'node' : 'spiral'}`;
+    assert.ok(p, `case ${i}: not found`);
+    assert.equal(p.type, want, `case ${i}: J = ${[a, b, c, d]}`);
+  }
+});
+
+test('random degenerate points, turned and moved: never a hyperbolic label', () => {
+  const rnd = random(4242), U = (a, b) => a + (b - a) * rnd();
+  const forms = [(u, w) => [u * u - w * w, 2 * u * w], (u, w) => [u * u, w * w], (u, w) => [u * u * u, -w], (u, w) => [u * u, -w], (u, w) => [-w * (u * u + w * w), u * (u * u + w * w)], (u, w) => [u * w, u * u - w * w], (u, w) => [Math.sin(u) ** 2, 1 - Math.cos(w)]];
+  for (let i = 0; i < 200; i++) {
+    const th = U(0, 2 * Math.PI), C = Math.cos(th), S = Math.sin(th), sc = 10 ** U(-3, 3), A = rnd() < 0.3 ? 0 : U(-2, 2), B = rnd() < 0.3 ? 0 : U(-2, 2), Q = forms[i % forms.length];
+    const uv = (x, y) => Q(C * (x - A) + S * (y - B), -S * (x - A) + C * (y - B));
+    useField((x, y) => { const [e, h] = uv(x, y); return sc * (C * e - S * h); }, (x, y) => { const [e, h] = uv(x, y); return sc * (S * e + C * h); });
+    const r = 10 ** U(-4, 0.3), tb = fpTable(equilibria(win(A + U(-0.4, 0.4) * r, B + U(-0.4, 0.4) * r, r), 81, 81, {}).fps);
+    assert.equal(tb.curve, 0, `case ${i}`);
+    assert.deepEqual(tb.rows.map(([p]) => p.type), ['degenerate'], `case ${i}, form ${i % forms.length}, r = ${r}`);
+  }
+});
+
+test('"stable" and "unstable" agree with the flow, integrated with nothing from core.js', () => {
+  const rnd = random(777), U = (a, b) => a + (b - a) * rnd();
+  const rk4 = (f, g, x, y, dt, N) => {
+    for (let i = 0; i < N; i++) {
+      const a1 = f(x, y), b1 = g(x, y), a2 = f(x + dt * a1 / 2, y + dt * b1 / 2), b2 = g(x + dt * a1 / 2, y + dt * b1 / 2);
+      const a3 = f(x + dt * a2 / 2, y + dt * b2 / 2), b3 = g(x + dt * a2 / 2, y + dt * b2 / 2), a4 = f(x + dt * a3, y + dt * b3), b4 = g(x + dt * a3, y + dt * b3);
+      x += dt / 6 * (a1 + 2 * a2 + 2 * a3 + a4); y += dt / 6 * (b1 + 2 * b2 + 2 * b3 + b4);
+    }
+    return [x, y];
+  };
+  let checked = 0;
+  for (let i = 0; i < 40; i++) {
+    const [a, b, c, d, p2, p3] = [U(-2, 2), U(-2, 2), U(-2, 2), U(-2, 2), U(-1, 1), U(-1, 1)];
+    const f = (x, y) => a * x + b * y + p2 * x * y + 0.3 * Math.sin(x * x), g = (x, y) => c * x + d * y + p3 * x * x - 0.2 * y * y * y;
+    useField(f, g);
+    for (const p of equilibria(win(0, 0, 2), 81, 81, {}).fps) {
+      if (p.stab !== 'stable' && p.stab !== 'unstable') continue;
+      const rate = Array.isArray(p.eig[0]) ? Math.abs(p.eig[0][0]) : Math.min(...p.eig.map(Math.abs));
+      if (rate < 0.01) continue;
+      const dir = p.stab === 'stable' ? 1 : -1, T = 12 / rate, N = Math.min(8000, Math.ceil(T / 0.005));
+      const [X, Y] = rk4((x, y) => dir * f(x, y), (x, y) => dir * g(x, y), p.x + 1e-4, p.y + 5e-5, T / N, N);
+      assert.ok(Math.hypot(X - p.x, Y - p.y) < Math.hypot(1e-4, 5e-5), `${p.type} at (${p.x}, ${p.y}), case ${i}`);
+      checked++;
+    }
+  }
+  assert.ok(checked > 10, `only ${checked} points checked`);
+});
+
+test('a number is small against its own scale, not against 1', () => {
+  assert.equal(fmt(-2e-12, 2e-12), '-2e-12');
+  assert.equal(fmt(3e-17, 1), '0');
+  assert.equal(fmt(1.5), '1.5');
 });
 
 // ---------- reaction networks ----------

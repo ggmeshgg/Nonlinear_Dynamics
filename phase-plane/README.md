@@ -7,13 +7,25 @@ Site: https://ggmeshgg.github.io/Nonlinear_Dynamics/phase-plane/
 
 ## What it computes
 
-- **Parameters.** Every symbol other than the two variables becomes a slider.
+- **Parameters.** Every symbol other than the two variables becomes a slider. It
+  is a number wherever it is written, so a(x − b)² means a·(x − b)²; brackets are
+  needed for (a(x − b))².
 - **Field and nullclines.** Direction field; ẋ = 0 and ẏ = 0 by marching squares.
 - **Fixed points.** Newton's method seeded from the crossings of the two
   nullclines and from a grid over the window. Only points inside the window are
-  listed and counted. Each is classified from the Jacobian (τ, Δ, τ² − 4Δ) and
-  shown in the trace–determinant plane. Many Δ = 0 points along a line are
-  reported as a curve of fixed points rather than listed.
+  listed and counted. Many Δ = 0 points along a line are reported as a curve of
+  fixed points rather than listed.
+- **Fixed-point labels.** Each comes from the Jacobian (τ, Δ, τ² − 4Δ), shown in
+  the trace–determinant plane, but a sign has to be earned. The error in J is
+  measured, by repeating the derivative at other steps and at the point where
+  Newton would go next; a sign smaller than eight times the error it inherits is
+  not read. At a simple root the next point is the same point; at a multiple root
+  J changes by at least half, so J is known only to be small, and the point is
+  "degenerate" (J = 0 or Δ = 0) whichever side Newton came from. So is a corner in
+  the field, where one-sided slopes differ at every step. Independently of J, the
+  field's turns are counted on a small circle round each point: a label that
+  contradicts this index (node, spiral, center +1, saddle −1) is demoted, and a
+  degenerate point is given its measured index.
 - **Saddle manifolds.** Integrated from the eigenvectors, forward and backward.
 - **Trajectories.** Click or drag. Adaptive Dormand–Prince RK45, bounded by
   step count and screen distance, not by elapsed time, so slow systems are
@@ -68,7 +80,12 @@ The URL holds the full state, so a link reproduces the view.
 ## Assumptions and limits
 
 Apart from the symbolic divergence, checks are numerical and sampled in the
-visible window. Fixed points outside the window are not listed, and the
+visible window. Sizes are judged against the field's own scale here and the
+window, not against 1, so units and zoom do not change an answer. A window smaller
+than about 10⁻⁵ is below the step used for derivatives: labels there err towards
+"degenerate". Degenerate points closer than about a pixel are shown as one. A
+field that is only C¹ can make a node read as "degenerate node", since the second
+derivative's jump shows up as error in J. Fixed points outside the window are not listed, and the
 bifurcation diagram covers only what the window shows. Newton from a finite set
 of seeds has no completeness guarantee for arbitrary expressions, though
 nullcline crossings cover everything visible at pixel resolution.
@@ -90,10 +107,13 @@ the bifurcation sweep. `index.html` holds the interface and drawing and imports
 `index.html` points it at jsDelivr, and in Node it comes from `node_modules`.
 
 `test/core.test.js` checks known answers, each from the analysis of a system
-rather than from the program's own output: equilibria and their types, which
+rather than from the program's own output: what expressions mean (random ones
+built together with their values), equilibria and their types, which
 systems are Hamiltonian or reversible, Van der Pol's cycle (amplitude 2.01,
 period 6.663 at μ = 1), the √μ Hopf branch, fold, branch and Hopf points at
-their exact parameter values, no limit cycles in conservative systems, the index
+their exact parameter values, no limit cycles in conservative systems, labels
+that hold at every zoom and offset (from algebra, on random fields too, and against
+trajectories integrated separately from `core.js`), the index
 of each kind of point and of zⁿ, its sum across a bifurcation, and no number on a
 circle through a fixed point or a pole. A change
 to the mathematics comes with a test of this kind.

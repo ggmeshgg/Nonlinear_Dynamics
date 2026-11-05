@@ -59,19 +59,34 @@ function toJS(e, sym) {
   throw new Error(`unsupported: ${h}`);
 }
 const _root = (x, n) => (x < 0 && n % 2 === 1) ? -Math.pow(-x, 1 / n) : Math.pow(x, 1 / n);
+// user symbols that a parse has read as functions, at any depth
+function userHeads(e, out = new Set()) {
+  if (e && !Array.isArray(e) && typeof e === 'object' && 'fn' in e) return userHeads(e.fn, out);
+  if (!Array.isArray(e)) return [...out];
+  if (typeof e[0] === 'string' && isUserSym(e[0]) && !FN1[e[0]]) out.add(e[0]);
+  for (const a of e) userHeads(a, out);
+  return [...out];
+}
 
 function compileLatex(latex, vars) {
   const rhs = latex.split('=').pop().trim();
   if (!rhs) return null;
   // CE infers and remembers symbol types (x(a−y) would make x a function), so isolate each parse
-  ce.pushScope();
-  let ex;
-  try {
-    for (const v of vars) ce.declare(v, 'real');
-    ex = ce.parse(rhs);
-    if (!ex.isValid) throw new Error('incomplete expression');
-    ex = ex.json;
-  } finally { ce.popScope(); }
+  const parse = names => {
+    ce.pushScope();
+    try {
+      for (const v of names) ce.declare(v, 'real');
+      const p = ce.parse(rhs);
+      return { valid: p.isValid, json: p.json };
+    } finally { ce.popScope(); }
+  };
+  // A parameter CE took for a function is a number too, and that changes the parse: as a function, a(x−b)² is the same
+  // tree as (a(x−b))², so it cannot be repaired afterwards. Parse again knowing it is a number, as a variable is.
+  let parsed = parse(vars);
+  const heads = userHeads(parsed.json).filter(h => !vars.includes(h));
+  if (heads.length) parsed = parse([...vars, ...heads]);
+  if (!parsed.valid) throw new Error('incomplete expression');
+  const ex = parsed.json;
   const params = new Set();
   const sym = n => {
     if (n === vars[0]) return 'x';
@@ -194,12 +209,20 @@ function buildModel(f, g, E, vars, polar) {
 const fx = (x, y) => model.f(x, y, P);
 const gy = (x, y) => model.g(x, y, P);
 
-function jac(x, y) {
-  const h = 1e-6 * (1 + Math.abs(x) + Math.abs(y));
-  return [
-    (fx(x + h, y) - fx(x - h, y)) / (2 * h), (fx(x, y + h) - fx(x, y - h)) / (2 * h),
-    (gy(x + h, y) - gy(x - h, y)) / (2 * h), (gy(x, y + h) - gy(x, y - h)) / (2 * h),
-  ];
+const jacStep = (x, y) => 1e-6 * (1 + Math.abs(x) + Math.abs(y));
+const jacAt = (x, y, h) => [
+  (fx(x + h, y) - fx(x - h, y)) / (2 * h), (fx(x, y + h) - fx(x, y - h)) / (2 * h),
+  (gy(x + h, y) - gy(x - h, y)) / (2 * h), (gy(x, y + h) - gy(x, y - h)) / (2 * h),
+];
+const jac = (x, y) => jacAt(x, y, jacStep(x, y));
+
+// A Newton step from (x, y). Where J is exactly singular there is no inverse, so take the regularized least-squares
+// step instead. NaN if J vanishes altogether.
+function newtonStep(F, G, [a, b, c, d]) {
+  const det = a * d - b * c, sq = a * a + b * b + c * c + d * d;
+  if (Math.abs(det) > 1e-300) return [(d * F - b * G) / det, (-c * F + a * G) / det];
+  const eps = 1e-12 * sq, A = a * a + c * c + eps, B = a * b + c * d, D = b * b + d * d + eps, r = a * F + c * G, t = b * F + d * G, D2 = A * D - B * B;
+  return [(D * r - B * t) / D2, (-B * r + A * t) / D2];
 }
 
 function findFixedPoints(b, n = 18, extraSeeds = []) {
@@ -212,33 +235,129 @@ function findFixedPoints(b, n = 18, extraSeeds = []) {
     b.x0 - pad + (b.x1 - b.x0 + 2 * pad) * (i + 0.5 + 0.1 * Math.sin(1.7 * j)) / (n + 1),
     b.y0 - pad + (b.y1 - b.y0 + 2 * pad) * (j + 0.5 + 0.1 * Math.cos(2.3 * i)) / (n + 1)]);
   seeds.sort((p, q) => Math.hypot(p[0] - cx, p[1] - cy) - Math.hypot(q[0] - cx, q[1] - cy));
+  // what "small" means for this field here: the median over the seeds, since a pole in view would swamp a maximum
+  const mags = seeds.map(([x, y]) => Math.hypot(fx(x, y), gy(x, y))).filter(isFinite).sort((p, q) => p - q);
+  const fs = mags.length ? mags[mags.length >> 1] : 0;
   for (const seed of seeds) {
     if (found.length >= 200) break;
     let [x, y] = seed;
-    let F0 = fx(x, y), G0 = gy(x, y), r0 = Math.hypot(F0, G0), ok = false;
+    let F0 = fx(x, y), G0 = gy(x, y), r0 = Math.hypot(F0, G0), ok = false, last = Infinity, prev = 0, hs = Infinity;
+    const steps = [];
     // run to the step floor rather than a residual: at a degenerate root the residual is ~x², so stopping at 1e-12 leaves x ≈ 1e-6 and a fake Δ
     for (let it = 0; it < 80 && isFinite(r0); it++) {
-      if (r0 === 0) { ok = true; break; }
-      const [a, bb, c, d] = jac(x, y), det = a * d - bb * c;
-      if (!isFinite(det) || Math.abs(det) < 1e-300) { ok = r0 < 1e-10; break; }
-      let dx = (d * F0 - bb * G0) / det, dy = (-c * F0 + a * G0) / det, lam = 1, nx, ny, F1, G1, r1;
-      for (let k = 0; k < 8; k++, lam /= 2) {
-        nx = x - lam * dx; ny = y - lam * dy; F1 = fx(nx, ny); G1 = gy(nx, ny); r1 = Math.hypot(F1, G1);
-        if (r1 < r0) break;
+      if (r0 === 0) { ok = true; last = 0; break; }
+      // A slope measured over h says nothing about a root nearer than h (x³ at x ≪ h reads as slope h², so the step
+      // looks tiny and the run looks finished): whenever the step comes out below h, measure again over that step.
+      const h0 = jacStep(x, y), hMin = 1e-8 * h0;
+      let h = Math.min(h0, hs), J = jacAt(x, y, h), [dx, dy] = newtonStep(F0, G0, J), len = Math.hypot(dx, dy);
+      while (len < h && h > hMin) {
+        h = Math.max(len, hMin);
+        const J2 = jacAt(x, y, h), [dx2, dy2] = newtonStep(F0, G0, J2), len2 = Math.hypot(dx2, dy2);
+        if (!isFinite(len2)) break;
+        const same = Math.abs(len2 - len) < 0.5 * len;
+        J = J2; dx = dx2; dy = dy2; len = len2;
+        if (same) break;
       }
-      const stepLen = lam * Math.hypot(dx, dy);
+      if (!isFinite(len)) break;
+      // the residual cannot see below rounding in x, y: from there on the Newton step is the better judge
+      const noise = 8 * Number.EPSILON * (Math.abs(x) + Math.abs(y)) * (Math.abs(J[0]) + Math.abs(J[1]) + Math.abs(J[2]) + Math.abs(J[3]));
+      let lam = 1, nx, ny, F1, G1, r1, better = false;
+      for (let k = 0; k < 8 && !better; k++) {
+        lam = 1 / 2 ** k;
+        nx = x - lam * dx; ny = y - lam * dy; F1 = fx(nx, ny); G1 = gy(nx, ny); r1 = Math.hypot(F1, G1);
+        better = r1 < r0 || (k === 0 && r0 <= noise);
+      }
+      if (!better) {
+        // no progress: at a corner the slope over h is wrong in a way no step can show, so try finer before giving up
+        if (h > hMin) { hs = h * 1e-3; prev = 0; continue; }
+        ok = r0 <= noise + 1e-14 * fs; last = len;
+        break;
+      }
+      // Newton only creeps in on a root of multiplicity m: its steps shrink by (m−1)/m, and a step m times as long lands on it
+      const ratio = prev ? len / prev : 0;
+      if (ratio > 0.4 && ratio < 0.99) {
+        const m = Math.round(1 / (1 - ratio)), X = x - m * dx, Y = y - m * dy, Fm = fx(X, Y), Gm = gy(X, Y), rm = Math.hypot(Fm, Gm);
+        if (rm < r1 || rm <= noise) { nx = X; ny = Y; F1 = Fm; G1 = Gm; r1 = rm; lam = m; }
+      }
+      prev = lam === 1 ? len : 0;
+      last = len;
+      steps.push(len);
       x = nx; y = ny; F0 = F1; G0 = G1; r0 = r1;
-      if (stepLen < 1e-13 * (1 + Math.abs(x) + Math.abs(y))) { ok = r0 < 1e-8; break; }
+      if (lam <= 1 && len < 1e-13 * (1 + Math.abs(x) + Math.abs(y))) { ok = r0 <= noise + 1e-8 * fs; break; }
     }
-    if (!ok && isFinite(r0) && r0 < 1e-10) ok = true;   // slow (linear) convergence at a multiple root, close enough
+    // Out of iterations: a small residual alone proves nothing (e^(−x) has one far out and no root), the steps must be dying too
+    if (!ok && isFinite(r0) && r0 <= 1e-12 * fs && steps.length > 10 && steps[steps.length - 1] < 0.5 * steps[steps.length - 11]) ok = true;
     if (!ok || !isFinite(x) || !isFinite(y)) continue;
     if (x < b.x0 - pad || x > b.x1 + pad || y < b.y0 - pad || y > b.y1 + pad) continue;
-    if (found.some(p => Math.hypot(p.x - x, p.y - y) < 1e-5 * span)) continue;
-    found.push({ x, y, inView: x >= b.x0 && x <= b.x1 && y >= b.y0 && y <= b.y1 });
+    // Where a run stopped is only known to about its last step, and Newton from elsewhere stops elsewhere: one root, not two
+    const u = Math.min(last, 1e-3 * span);
+    const same = found.find(p => Math.hypot(p.x - x, p.y - y) < Math.max(1e-5 * span, 30 * Math.max(u, p.u)));
+    if (!same) found.push({ x, y, u, r: r0, inView: x >= b.x0 && x <= b.x1 && y >= b.y0 && y <= b.y1 });
+    else if (r0 < same.r) Object.assign(same, { x, y, u, r: r0, inView: x >= b.x0 && x <= b.x1 && y >= b.y0 && y <= b.y1 });
   }
-  const fps = found.map(classify);
+  const fps = mergeUnresolved(found.map(classify), span);
   if (model.polar) for (const p of fps) if (Math.hypot(p.x, p.y) < 1e-6 * span) polarOrigin(p, span);
+  checkIndices(fps, span);
   return fps;
+}
+
+// How far from p the field cannot be told from zero: walk out along each direction until the residual rises clear of
+// rounding. At a root flat in one direction (u³, −w turned by an angle) Newton from different seeds really does stop in
+// different places inside this zone. Infinity if it does not rise across much of the window, as on a curve of equilibria.
+function blindRadius(p, span) {
+  const [a, b, c, d] = p.J, sc = Math.abs(a) + Math.abs(b) + Math.abs(c) + Math.abs(d);
+  const row = Math.hypot(a, b) >= Math.hypot(c, d) ? [a, b] : [c, d], n = Math.hypot(...row);
+  const dirs = n > 0 ? [[-row[1] / n, row[0] / n]] : [[1, 0], [0, 1]];   // along the null direction; if J = 0, every way
+  const thr = q => 16 * Number.EPSILON * (Math.abs(p.x) + Math.abs(p.y) + q) * sc + 4 * Math.hypot(fx(p.x, p.y), gy(p.x, p.y));
+  let out = 0;
+  for (const [ex, ey] of dirs) {
+    let q = 1e-15 * (1 + Math.abs(p.x) + Math.abs(p.y));
+    while (q < 0.3 * span) {
+      const t = thr(q), up = Math.hypot(fx(p.x + q * ex, p.y + q * ey), gy(p.x + q * ex, p.y + q * ey)), dn = Math.hypot(fx(p.x - q * ex, p.y - q * ey), gy(p.x - q * ex, p.y - q * ey));
+      if (up > t && dn > t) break;
+      q *= 2;
+    }
+    if (q >= 0.3 * span) return Infinity;
+    out = Math.max(out, q);
+  }
+  return out;
+}
+
+// Degenerate points inside one another's blind zone, or under one pixel at any usual window size, are one point, at
+// their mean. Nothing a linearization can say tells them apart, and two real ones that close look like one at this zoom.
+function mergeUnresolved(fps, span) {
+  const degen = fps.filter(p => p.stab === 'degen');
+  if (degen.length < 2) return fps;
+  const zone = new Map(degen.map(p => [p, blindRadius(p, span)])), gone = new Set(), out = [];
+  for (const p of fps) {
+    if (gone.has(p)) continue;
+    if (p.stab !== 'degen' || zone.get(p) === Infinity) { out.push(p); continue; }
+    const group = degen.filter(q => !gone.has(q) && zone.get(q) !== Infinity && Math.hypot(q.x - p.x, q.y - p.y) < Math.max(1e-3 * span, 2 * zone.get(p), 2 * zone.get(q)));
+    if (group.length < 2) { out.push(p); continue; }
+    group.forEach(q => gone.add(q));
+    const x = group.reduce((t, q) => t + q.x, 0) / group.length, y = group.reduce((t, q) => t + q.y, 0) / group.length;
+    out.push({ ...classify({ x, y, inView: group.some(q => q.inView) }), u: Math.max(...group.map(q => q.u ?? 0)) });
+  }
+  return out;
+}
+
+// The check that does not go through the Jacobian. A node, spiral or center has index +1 and a saddle −1, so count the
+// field's turns on a small circle round each point: a label that disagrees is demoted, and a degenerate point gets
+// the one thing that can be said about it without a linearization.
+function checkIndices(fps, span) {
+  for (const p of fps) {
+    let near = Infinity;
+    for (const q of fps) if (q !== p) near = Math.min(near, Math.hypot(q.x - p.x, q.y - p.y));
+    const w = windingOn(p.x, p.y, Math.min(1e-3 * span, 0.4 * near), 48);
+    p.index = w.fail ? null : w.index;
+    if (p.index === null) continue;
+    const claim = p.stab === 'saddle' ? -1 : p.stab === 'degen' ? null : 1;
+    if (claim !== null && claim !== p.index) {
+      p.note = `the Jacobian looks like a ${p.type}, but that has index ${fmtIndex(claim)}`;
+      p.type = 'degenerate'; p.stab = 'degen';
+    }
+    if (p.stab === 'degen') p.note = `${p.note}; index ${fmtIndex(p.index)} on a small circle`;
+  }
 }
 
 // a polar system whose θ̇ depends on θ is not C¹ at the origin, so the Jacobian there means nothing;
@@ -258,19 +377,67 @@ function polarOrigin(p, span) {
   p.note = 'θ̇ depends on θ: the field is not C¹ at the origin, so there is no linearization; classified by the sign of ṙ near r = 0';
 }
 
+// how far the numbers in J can be trusted: the same derivative at other steps (truncation and rounding), and at where
+// Newton would go next. At a true simple root that next point is the same point; at a multiple root J ~ x^(m−1) changes
+// by at least half, so J is known to be nothing but "small".
+function jacError(x, y, F, G, J) {
+  const h = jacStep(x, y), e = [0, 0, 0, 0];
+  const [dx, dy] = newtonStep(F, G, J);
+  if (!isFinite(dx) || !isFinite(dy)) return J.map(() => Infinity);
+  const others = [jacAt(x, y, 2 * h), jacAt(x, y, 10 * h)];
+  const moved = jacAt(x - dx, y - dy, h);
+  for (let k = 0; k < 4; k++) {
+    e[k] = Math.max(Math.abs(J[k] - others[0][k]), Math.abs(J[k] - others[1][k])) + Math.abs(J[k] - moved[k]);
+    if (!isFinite(e[k])) e[k] = Infinity;
+  }
+  return e;
+}
+
+// a corner in the field: one-sided slopes that differ by the same amount at any step, where for a smooth field the
+// difference shrinks with the step
+function hasKink(x, y, sc) {
+  const jump = h => {
+    const f0 = fx(x, y), g0 = gy(x, y);
+    return Math.max(
+      Math.abs(fx(x + h, y) + fx(x - h, y) - 2 * f0), Math.abs(fx(x, y + h) + fx(x, y - h) - 2 * f0),
+      Math.abs(gy(x + h, y) + gy(x - h, y) - 2 * g0), Math.abs(gy(x, y + h) + gy(x, y - h) - 2 * g0)) / h;
+  };
+  const h = jacStep(x, y), j1 = jump(h);
+  return j1 > 1e-3 * sc && jump(10 * h) < 3 * j1;
+}
+
+// How sure a sign must be: its size against the propagated error in J, with a safety factor (a multiple root has
+// error ≥ half the value), and rounding of the arithmetic itself as a floor.
+const SURE = 8;
+
 function classify({ x, y, inView = true }) {
-  const J = jac(x, y), [a, b, c, d] = J;
-  const tau = a + d, det = a * d - b * c, disc = tau * tau - 4 * det;
-  const sc = Math.abs(a) + Math.abs(b) + Math.abs(c) + Math.abs(d) + 1e-12;
+  const F = fx(x, y), G = gy(x, y);
+  let J = jac(x, y), [a, b, c, d] = J;
+  const err = jacError(x, y, F, G, J), [ea, eb, ec, ed] = err;
+  const sc = Math.abs(a) + Math.abs(b) + Math.abs(c) + Math.abs(d);
+  let tau = a + d, det = a * d - b * c, disc = tau * tau - 4 * det;
+  const eTau = ea + ed;
+  const eDet = Math.abs(d) * ea + Math.abs(a) * ed + Math.abs(c) * eb + Math.abs(b) * ec + ea * ed + eb * ec;
+  const eDisc = 2 * Math.abs(tau) * eTau + 4 * eDet;
   const p = { x, y, J, tau, det, disc, inView };
-  const zero = v => Math.abs(v) < 1e-7 * sc;
-  if (Math.abs(det) < 1e-7 * sc * sc) { p.type = 'degenerate'; p.stab = 'degen'; p.note = 'Δ = 0: linearization inconclusive'; }
+  const kink = sc > 0 && hasKink(x, y, sc);
+  if (kink || !(sc > 0) || Math.abs(det) <= SURE * eDet + 1e-13 * sc * sc) {
+    p.type = 'degenerate'; p.stab = 'degen';
+    if (kink) p.note = 'a corner in the field: there is no linearization here';
+    else {
+      // what is left of J once its noise is taken out is all that can be said: most often J = 0, or one zero eigenvalue
+      J = J.map((v, k) => Math.abs(v) <= SURE * err[k] ? 0 : v);
+      [a, b, c, d] = J;
+      p.J = J; tau = p.tau = a + d; det = p.det = a * d - b * c; disc = p.disc = tau * tau - 4 * det;
+      p.note = J.every(v => v === 0) ? 'J = 0: linearization inconclusive' : 'Δ = 0: linearization inconclusive';
+    }
+  }
   else if (det < 0) { p.type = 'saddle'; p.stab = 'saddle'; }
-  else if (zero(tau)) { p.type = 'linear center'; p.stab = 'center'; p.note = 'τ = 0: nonlinear terms decide'; }
+  else if (Math.abs(tau) <= SURE * eTau + 1e-9 * sc) { p.type = 'linear center'; p.stab = 'center'; p.note = 'τ = 0: nonlinear terms decide'; tau = 0; disc = -4 * det; }
   else {
     const st = tau < 0 ? 'stable' : 'unstable';
     p.stab = st;
-    p.type = Math.abs(disc) < 1e-7 * sc * sc ? `degenerate ${st} node` : disc > 0 ? `${st} node` : `${st} spiral`;
+    p.type = Math.abs(disc) <= SURE * eDisc + 1e-9 * sc * sc ? `degenerate ${st} node` : disc > 0 ? `${st} node` : `${st} spiral`;
   }
   if (disc >= 0) {
     const s = Math.sqrt(disc);
@@ -511,7 +678,7 @@ function detectStructure(b) {
     finite++;
     divMax = Math.max(divMax, Math.abs(J[0] + J[3]));
     scMax = Math.max(scMax, Math.abs(J[0]) + Math.abs(J[1]) + Math.abs(J[2]) + Math.abs(J[3]));
-    const f = fx(x, y), g = gy(x, y), m = Math.abs(f) + Math.abs(g) + 1e-12;
+    const f = fx(x, y), g = gy(x, y), m = Math.abs(f) + Math.abs(g) || 1;
     const a = (Math.abs(fx(x, -y) + f) + Math.abs(gy(x, -y) - g)) / m;
     const c = (Math.abs(fx(-x, y) - f) + Math.abs(gy(-x, y) + g)) / m;
     if (isFinite(a)) rY = Math.max(rY, a); else rY = Infinity;
@@ -540,7 +707,7 @@ function detectStructure(b) {
       const f = fx(x, y), g = gy(x, y), d = Ex * f + Ey * g;
       if (!isFinite(d)) continue;
       n++;
-      const rel = Math.abs(d) / (Math.hypot(Ex, Ey) * Math.hypot(f, g) + 1e-12);
+      const rel = Math.abs(d) / (Math.hypot(Ex, Ey) * Math.hypot(f, g) || 1);
       worst = Math.max(worst, rel);
       if (rel > 1e-5) { if (d > 0) pos++; else neg++; }
     }
@@ -603,7 +770,14 @@ function windingOn(cx, cy, R, N) {
   const at = t => {
     evals++;
     const x = cx + R * Math.cos(t), y = cy + R * Math.sin(t), f = fx(x, y), g = gy(x, y);
-    return { t, x, y, f, g, phi: Math.atan2(g, f), m: Math.hypot(f, g) };
+    const m = Math.hypot(f, g);
+    return { t, x, y, f, g, m, ux: f / m, uy: g / m };
+  };
+  // Is the field really zero at q, or just very small? ẋ = x⁹, ẏ = −y is 10⁻¹⁸ at (0.01, 0) with its root a whole radius
+  // away. Newton's step estimates the distance to the root: tiny at a real zero, the size of the circle here.
+  const rootHere = q => {
+    const h = Math.min(jacStep(q.x, q.y), 1e-3 * R), [dx, dy] = newtonStep(q.f, q.g, jacAt(q.x, q.y, h)), len = Math.hypot(dx, dy);
+    return !(len > 1e-6 * R);
   };
   // the field stopped behaving at q: a fixed point if it is small there compared with close by, off the curve too
   const fail = q => {
@@ -613,7 +787,7 @@ function windingOn(cx, cy, R, N) {
         const x = cx + r * Math.cos(t), y = cy + r * Math.sin(t);
         return Math.hypot(fx(x, y), gy(x, y));
       }).filter(isFinite);
-      if (around.length && q.m <= 1e-2 * Math.max(...around)) return { fail: { kind: 'fixed', x: q.x, y: q.y } };
+      if (around.length && q.m <= 1e-2 * Math.max(...around)) return rootHere(q) ? { fail: { kind: 'fixed', x: q.x, y: q.y } } : null;
     }
     return { fail: { kind: 'singular', x: q.x, y: q.y } };
   };
@@ -626,32 +800,40 @@ function windingOn(cx, cy, R, N) {
       const G = (Math.sqrt(5) - 1) / 2;
       let lo = a.t, hi = c.t, p = at(hi - G * (hi - lo)), r = at(lo + G * (hi - lo));
       for (let it = 0; it < 60; it++) {
-        for (const q of [p, r]) if (!isFinite(q.m) || q.m === 0) return fail(q);
+        for (const q of [p, r]) if (!isFinite(q.m) || q.m === 0) return fail(q) ?? { fail: { kind: 'fast' } };
         if (val(p) < val(r)) { hi = r.t; r = p; p = at(hi - G * (hi - lo)); }
         else { lo = p.t; p = r; r = at(lo + G * (hi - lo)); }
       }
       const best = val(p) < val(r) ? p : r;
-      if (val(best) <= 1e-12 * near) return fail(best);
+      if (val(best) <= 1e-12 * near) { const f = fail(best); if (f) return f; }
     }
     return null;
   };
   const first = at(0);
-  if (!isFinite(first.m) || first.m === 0) return fail(first);
+  if (!isFinite(first.m) || first.m === 0) return fail(first) ?? { fail: { kind: 'fast' } };
   let turned = 0, prev = first, before = null, second = null;
   for (let k = 1; k <= N; k++) {
     // the last arc ends on the first sample itself, so the turns add up to a whole number
     const stack = [k === N ? { ...first, t: 2 * Math.PI } : at(2 * Math.PI * k / N)];
     while (stack.length) {
       const q = stack[stack.length - 1];
-      if (!isFinite(q.m) || q.m === 0) return fail(q);
-      let d = q.phi - prev.phi;
-      if (d > Math.PI) d -= 2 * Math.PI; else if (d < -Math.PI) d += 2 * Math.PI;
-      if (Math.abs(d) < IX_STEP) {
+      if (!isFinite(q.m) || q.m === 0) return fail(q) ?? { fail: { kind: 'fast' } };
+      // from the cross product, not a difference of angles: nearly opposite vectors have angles exactly π apart in
+      // floating point, which loses the sign of the turn, while the cross product still has it
+      const cross = prev.ux * q.uy - prev.uy * q.ux, dot = prev.ux * q.ux + prev.uy * q.uy, d = Math.atan2(cross, dot);
+      // At the finest arc a large turn is either a real zero or pole on the curve, or the field swinging round a very
+      // small but nonzero value; then the angles are good, and so is their difference.
+      const atFloor = q.t - prev.t < floor;
+      if (atFloor && Math.abs(d) >= IX_STEP) {
+        const f = fail(q.m < prev.m ? q : prev);
+        if (f) return f;
+        if (cross === 0) return { fail: { kind: 'fast' } };   // exactly opposite: which way it turned is lost
+      }
+      if (Math.abs(d) < IX_STEP || atFloor) {
         if (before) { const s = spike(before, prev, q); if (s) return s; }
         turned += d; before = prev; prev = q; second ??= q; stack.pop();
         continue;
       }
-      if (q.t - prev.t < floor) return fail(q.m < prev.m ? q : prev);
       if (evals > IX_EVALS) return { fail: { kind: 'fast' } };
       stack.push(at((prev.t + q.t) / 2));
     }
@@ -674,8 +856,10 @@ function circleIndex(cx, cy, R) {
   return a.index === b.index ? { index: a.index, fail: null } : { index: null, fail: { kind: 'fast' } };
 }
 
-// a fixed point's own index from its linearization: null where that says nothing (Δ = 0, or no Jacobian)
-const fpIndex = p => p.stab === 'saddle' ? -1 : p.stab === 'degen' || !isFinite(p.det) ? null : 1;
+const fmtIndex = k => k > 0 ? `+${k}` : k < 0 ? `−${-k}` : '0';
+
+// a fixed point's own index, as measured on a small circle by checkIndices; failing that, from its label; else null
+const fpIndex = p => p.index ?? (p.stab === 'saddle' ? -1 : p.stab === 'degen' || !isFinite(p.det) ? null : 1);
 
 // The fixed points inside the circle and the sum of their indices, which the index on the circle must equal
 // unless something inside was missed. `unknown` counts those fpIndex cannot say anything about.
@@ -741,7 +925,8 @@ function mergeReaction(g, v) {
   return null;
 }
 
-const fmt = v => { if (!isFinite(v)) return String(v); if (Math.abs(v) < 1e-9) return '0'; return String(+v.toPrecision(3)); };
+// `scale`: what the value is small against; rounding noise prints as 0, a tiny true value does not
+const fmt = (v, scale = 1) => { if (!isFinite(v)) return String(v); if (Math.abs(v) < 1e-9 * scale) return '0'; return String(+v.toPrecision(3)); };
 
 // ---------- bifurcation diagram ----------
 // Sweep one parameter over a range. At each value: fixed points (Newton from a grid over the window), classified;
@@ -918,6 +1103,6 @@ export {
   fx, gy, jac, findFixedPoints, classify, integrateDP, integrateIM, trajectory,
   sampleGrid, contour, interpGrid, crossings, hamiltonianGrid,
   symbolicDiv, detectStructure, centerReason, equilibria, fpTable, buildCRN,
-  circleIndex, fpIndex, enclosedIndex,
+  circleIndex, fpIndex, fmtIndex, enclosedIndex, checkIndices,
   project, bifSweep, findCycles, polarCycleFn, linkBranches,
 };
