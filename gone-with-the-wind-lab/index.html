@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Фильм, научная статья и интерактивный фазовый портрет отношений Ретта и Скарлетт.">
+  <title>Унесённые ветром · Динамика отношений</title>
+  <link rel="stylesheet" href="vendor/katex/katex.min.css">
+  <link rel="stylesheet" href="style.css">
+  <script defer src="vendor/katex/katex.min.js"></script>
+  <script defer src="model.js"></script>
+  <script defer src="app.js"></script>
+</head>
+<body>
+  <a class="skip" href="#main">К содержанию</a>
+  <header class="mast"><div class="wrap mast-inner">
+    <a class="brand" href="#top"><span class="brand-mark" aria-hidden="true">↗</span><span>Нелинейно<small>Кино и математика</small></span></a>
+    <nav aria-label="Разделы"><a class="club-back" href="../">← Клуб</a><a href="#model">Модель</a><a href="#film">Сцены</a><a href="#solution">Решение</a><a class="nav-cta" href="#lab">Лаборатория ↗</a></nav>
+  </div></header>
+  <main id="main">
+    <section class="hero" id="top">
+      <div class="wrap hero-grid">
+        <div class="hero-copy">
+          <p class="eyebrow">ФИЛЬМ 1939 ГОДА <span>·</span> МОДЕЛЬ 2013 ГОДА</p>
+          <h1>Унесённые<br><em>ветром</em></h1>
+          <p class="hero-lead">Почему сначала сильнее влюблён Ретт, а к финалу — Скарлетт?</p>
+          <p class="hero-intro">Ринальди, Делла Росса и Ланди описали этот поворот двумя уравнениями. Умеренный интерес сближает героев, а при сильном внимании ответ слабеет. Разлука и послевоенные обстоятельства меняют ход отношений.</p>
+          <div class="hero-actions"><a class="button primary" href="#lab">Изменить ход истории ↗</a><a class="hero-link" href="#film">Смотреть сцены ↓</a></div>
+        </div>
+        <figure class="hero-figure">
+          <div class="film-frame"><img src="assets/scene-05.jpg" alt="Скарлетт и Ретт перед первым поцелуем" width="276" height="196" fetchpriority="high"></div>
+          <figcaption>Скарлетт О’Хара и Ретт Батлер <span>Кадр S.5 · рис. 1 статьи</span></figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <section id="model" class="section wrap">
+      <p class="eyebrow accent">МОДЕЛЬ</p>
+      <h2>Как меняются чувства</h2>
+      <p class="intro">В каждый момент у пары есть две координаты. Точка на графике показывает, насколько каждый вовлечён. Когда чувства меняются, точка рисует траекторию.</p>
+      <div class="model-grid">
+        <div class="equation-card">
+          <div class="axis-pair"><span><i class="dot rhett"></i> R · чувства Ретта</span><span><i class="dot scarlett"></i> S · чувства Скарлетт</span></div>
+          <div class="math display">\begin{aligned}\dot R&=-R+A_S+kSe^{-S}\\\dot S&=-S+A_R+kRe^{-R}\end{aligned}</div>
+          <p>Точка над буквой означает скорость изменения. <span class="math">A_S</span> — привлекательность Скарлетт для Ретта, <span class="math">A_R</span> — привлекательность Ретта для Скарлетт.</p>
+        </div>
+        <div class="terms">
+          <div><span class="math term">-R</span><div><h3>Забывание</h3><p>Без подпитки чувство затухает. Чем оно сильнее, тем больше скорость затухания.</p></div></div>
+          <div><span class="math term">A_S</span><div><h3>Привлекательность</h3><p>Ретта тянет к Скарлетт даже в момент, когда она к нему равнодушна.</p></div></div>
+          <div><span class="math term">kSe^{-S}</span><div><h3>Ответ на внимание</h3><p>Небольшой интерес Скарлетт усиливает реакцию Ретта. После порога каждый дополнительный прирост её интереса уменьшает этот вклад.</p></div></div>
+        </div>
+      </div>
+      <div class="reaction-grid">
+        <figure class="paper-figure"><img src="assets/report-reaction.png" alt="Ответ на внимание возрастает до q равного единице, затем убывает к нулю" loading="lazy"><figcaption>Кривая реакции при <span class="math">k=15</span>. Расчёт из отчёта.</figcaption></figure>
+        <div><h3>Когда внимания становится слишком много</h3>
+          <p>В первой сцене авторы замечают, как Скарлетт охотно отвечает на небольшие знаки внимания и быстро теряет интерес, получив отклик. Героям приписывают такую же форму реакции в отношениях друг с другом.</p>
+          <div class="math display">F(q)=kqe^{-q},\qquad F'(q)=ke^{-q}(1-q)</div>
+          <p>Максимальный вклад равен <span class="math">k/e</span> при <span class="math">q=1</span>. За максимумом вклад убывает и остаётся положительным. Само чувство может ослабевать, когда забывание перевешивает оба положительных слагаемых.</p>
+        </div>
+      </div>
+      <details class="reading"><summary>Общая форма модели в статье</summary>
+        <p>Авторы обозначают чувства Скарлетт через <span class="math">x_1=S</span>, а Ретта через <span class="math">x_2=R</span>. При <span class="math">j\ne i</span>:</p>
+        <div class="math display">\dot x_i=-\alpha_i x_i+\rho_i A_j+k_i x_j\exp(-x_j/\beta_i)</div>
+        <p><span class="math">\alpha_i</span> задаёт скорость забывания, <span class="math">\rho_i</span> — чувствительность к привлекательности, <span class="math">k_i</span> — начальный наклон реакции, <span class="math">\beta_i</span> — положение её максимума. Привлекательность партнёра <span class="math">j</span> складывается из его качеств <span class="math">A_{hj}</span> с весами <span class="math">\lambda_{hi}</span>, которые придаёт им наблюдатель <span class="math">i</span>.</p>
+        <div class="math display">A_j=\sum_h\lambda_{hi} A_{hj}.</div>
+        <p>Для рисунков статьи берут <span class="math">\alpha_i=\rho_i=\beta_i=1</span> и <span class="math">k_i=15</span> для обоих героев. Различия между этапами задают через <span class="math">A_S,A_R</span>. В лаборатории сохранена эта нормировка, а силу отклика <span class="math">k</span> можно менять.</p>
+      </details>
+    </section>
+
+    <section id="film" class="section film-section"><div class="wrap">
+      <p class="eyebrow accent">ФИЛЬМ И ФАЗОВАЯ ПЛОСКОСТЬ</p>
+      <h2>От первого взгляда до ухода</h2>
+      <p class="intro">Авторы выбрали двенадцать фрагментов фильма. Первая сцена подсказала форму реакции Скарлетт, а остальные нанесены на рассчитанную траекторию в порядке событий.</p>
+      <div class="acts">
+        <article><h3>Первая встреча</h3><p><span class="math">A_S=1.2,\ A_R=1</span>. Оба чувства растут из нуля. Затем интерес Скарлетт проходит максимум, а вовлечённость Ретта продолжает расти.</p></article>
+        <article><h3>Разлука</h3><p>Между S.6 и S.7 проходит около полугода по статье. Авторы оставляют лишь забывание. За время <span class="math">\Delta t</span> обе координаты умножаются на <span class="math">e^{-\Delta t}</span>. На плоскости это движение по прямой к началу.</p></article>
+        <article><h3>После войны</h3><p>Финансовое положение Тары повышает для Скарлетт ценность богатства Ретта. При <span class="math">A_R=2</span> остаётся один устойчивый узел <span class="math">(R,S)\approx(1.27,7.35)</span>. К финалу сильнее вовлечена Скарлетт.</p></article>
+      </div>
+      <div class="scene-grid">
+        <div class="scene-view">
+          <div class="scene-picture"><img id="scene-image" src="assets/scene-02.jpg" alt="Ретт впервые смотрит на Скарлетт" width="276" height="196" loading="lazy"></div>
+          <div class="scene-copy" aria-live="polite">
+            <p class="eyebrow accent" id="scene-kicker">S.2 · 20:46–21:29</p>
+            <h3 id="scene-title">Первый взгляд</h3>
+            <p id="scene-description">В Двенадцати Дубах Скарлетт замечает взгляд Ретта. Авторы помещают первую встречу в начало координат.</p>
+          </div>
+          <div class="scene-nav" id="scene-nav" aria-label="Выбрать сцену"></div>
+        </div>
+        <figure class="article-figure">
+          <div class="article-map"><img src="assets/article-phase.jpg" alt="Авторская траектория с портретами Ретта и Скарлетт и метками эпизодов S.2–S.12" width="556" height="558" loading="lazy"><span id="scene-marker" class="scene-marker" aria-hidden="true"></span></div>
+          <figcaption><b>Рис. 5 из статьи.</b> Горизонталь — Скарлетт, вертикаль — Ретт. На графиках лаборатории оси переставлены. Пунктир S.6–S.7 показывает разлуку.</figcaption>
+        </figure>
+      </div>
+      <details class="reading"><summary>Авторский график чувств по годам</summary>
+        <figure class="paper-figure"><img src="assets/article-timeline.jpg" alt="Рисунок 6 статьи. Синяя линия Ретта выше в начале, розовая линия Скарлетт выше к финалу" width="1191" height="593" loading="lazy"><figcaption><b>Рис. 6 из статьи.</b> Синяя линия — Ретт, розовая — Скарлетт. Пунктиром отмечена разлука. Годы — предложенная авторами привязка к событиям фильма и романа.</figcaption></figure>
+      </details>
+      <p class="small source-caption">Кадры и расположение сцен воспроизведены по рис. 1 и 5 статьи. Координаты сцен выражают авторскую оценку. Пересечение ветвей на рис. 5 возможно, потому что до и после разлуки действуют разные уравнения.</p>
+    </div></section>
+
+    <section id="lab" class="section lab-section"><div class="wrap">
+      <p class="eyebrow">ЛАБОРАТОРИЯ</p>
+      <h2>Выберите начало.<br>Проследите исход.</h2>
+      <p class="intro">Задайте привлекательность, отклик и начальные чувства. Нажмите на фазовую плоскость, чтобы перенести старт. Двигайте время и наблюдайте одну и ту же точку на обоих графиках.</p>
+      <div id="presets" class="presets" aria-label="Сценарии">
+        <button type="button" data-preset="early" aria-pressed="true">Первая встреча</button>
+        <button type="button" data-preset="alternate" aria-pressed="false">Другой старт</button>
+        <button type="button" data-preset="equal" aria-pressed="false">Равная привлекательность</button>
+        <button type="button" data-preset="late" aria-pressed="false">После войны</button>
+        <button type="button" data-preset="story" aria-pressed="false">Весь сюжет</button>
+      </div>
+      <p id="preset-note" class="preset-note"></p>
+      <div class="lab-grid">
+        <div class="controls">
+          <div class="control"><label for="as">Привлекательность Скарлетт <i>A<sub>S</sub></i></label><output id="as-value" for="as"></output><input id="as" type="range" min=".2" max="3" step=".01" value="1.2"></div>
+          <div class="control"><label for="ar">Привлекательность Ретта <i>A<sub>R</sub></i></label><output id="ar-value" for="ar"></output><input id="ar" type="range" min=".2" max="3" step=".01" value="1"></div>
+          <div class="control"><label for="k">Сила отклика <i>k</i></label><output id="k-value" for="k"></output><input id="k" type="range" min=".1" max="24" step=".1" value="15"></div>
+          <div class="control"><label for="r0">Чувства Ретта в начале <i>R₀</i></label><output id="r0-value" for="r0"></output><input id="r0" type="range" min="0" max="12" step=".05" value="0"></div>
+          <div class="control"><label for="s0">Чувства Скарлетт в начале <i>S₀</i></label><output id="s0-value" for="s0"></output><input id="s0" type="range" min="0" max="12" step=".05" value="0"></div>
+          <div id="story-controls" hidden>
+            <div class="control"><label for="arLate">Привлекательность Ретта после разлуки</label><output id="arLate-value" for="arLate"></output><input id="arLate" type="range" min=".2" max="3" step=".01" value="2"></div>
+            <div class="control"><label for="pause">Длительность разлуки</label><output id="pause-value" for="pause"></output><input id="pause" type="range" min="0" max="4" step=".1" value="1"></div>
+          </div>
+          <div class="checks">
+            <label><input id="field" type="checkbox" checked> Поле направлений</label>
+            <label><input id="curves" type="checkbox" checked> Нульклины и сепаратриса</label>
+            <label><input id="compare" type="checkbox"> Сравнить со стартом (0; 0)</label>
+          </div>
+        </div>
+        <div class="phase-panel plot-card">
+          <div class="plot-head"><h3>Фазовая плоскость</h3><span id="regime"></span></div>
+          <canvas id="phase" aria-label="Фазовый портрет. Начальную точку можно также задать ползунками R и S."></canvas>
+          <div class="legend"><span><i class="line gold"></i> Траектория</span><span><i class="line blue"></i> Ṙ = 0</span><span><i class="line red"></i> Ṡ = 0</span><span><i class="line violet"></i> Сепаратриса</span><span>● притяжение · ◇ седло</span></div>
+          <p id="equilibria" class="plot-note"></p>
+        </div>
+        <div class="time-panel plot-card">
+          <div class="plot-head"><h3>Чувства во времени</h3><div class="legend"><span><i class="line blue"></i> Ретт</span><span><i class="line red"></i> Скарлетт</span></div></div>
+          <canvas id="time-plot" aria-label="Графики чувств Ретта и Скарлетт во времени"></canvas>
+          <div class="playback"><button type="button" id="play" class="button primary">▶ Запустить</button><label class="sr-only" for="time">Момент времени</label><input id="time" type="range" min="0" max="20" step=".01" value="0"><output id="time-value" for="time"></output></div>
+          <div class="metrics"><div><span>Ретт · R</span><strong id="r-now"></strong></div><div><span>Скарлетт · S</span><strong id="s-now"></strong></div><div><span id="end-label">К концу расчёта</span><strong id="end"></strong></div></div>
+          <p class="plot-note" id="experiment-end"></p>
+        </div>
+      </div>
+      <p class="lab-foot">Время условное. В режиме «Весь сюжет» разлука начинается при <span class="math">t=3.6</span>. Её длина по умолчанию равна одной условной единице. Эти длительности выбраны для демонстрации порядка событий. Во время разлуки остаются только <span class="math">\dot R=-R,\ \dot S=-S</span>.</p>
+      <noscript><p>Включите JavaScript, чтобы запустить лабораторию и отобразить формулы.</p></noscript>
+    </div></section>
+
+    <section id="solution" class="section wrap">
+      <p class="eyebrow accent">РАЗБОР ЗАДАЧИ ИЗ УЧЕБНИКА</p>
+      <h2>От уравнений к фазовому портрету</h2>
+      <p class="intro">Четыре пункта исходной задачи посвящены системе с постоянными параметрами. Численный пример относится к первой части истории.</p>
+      <details class="reading solution" open><summary><span class="part">a</span> Что означают три слагаемых?</summary>
+        <p>Уравнение Ретта содержит затухание <span class="math">-R</span>, постоянную подпитку <span class="math">A_S</span> и ответ на чувства Скарлетт <span class="math">F(S)</span>. У Скарлетт аналогичные слагаемые <span class="math">-S,\ A_R,\ F(R)</span>. Производная <span class="math">F'(q)=ke^{-q}(1-q)</span> положительна до <span class="math">q=1</span> и отрицательна после, поэтому усиление внимания сначала увеличивает, а затем уменьшает ответ.</p>
+      </details>
+      <details class="reading solution" open><summary><span class="part">b</span> Почему чувства остаются неотрицательными?</summary>
+        <div class="math display">\begin{aligned}\left.\dot R\right|_{R=0}&amp;=A_S+F(S)>0,\\ \left.\dot S\right|_{S=0}&amp;=A_R+F(R)>0.\end{aligned}</div>
+        <p>На обеих осях поле строго направлено в первый квадрант. При первом выходе через ось соответствующая координата должна была бы убывать до нуля, но её производная там положительна. Поэтому траектория из квадранта не выходит, а из <span class="math">(0,0)</span> сразу входит внутрь. При таких стартах модель описывает диапазон от равнодушия до сильной вовлечённости.</p>
+        <p>Траектории также ограничены. Для <span class="math">q\ge0</span> выполнено <span class="math">F(q)\le k/e</span>. Положим <span class="math">M_R=A_S+k/e,\ M_S=A_R+k/e</span>. Умножив неравенства <span class="math">\dot R+R\le M_R,\ \dot S+S\le M_S</span> на <span class="math">e^t</span> и проинтегрировав, получаем:</p>
+        <div class="math display">\begin{aligned} R(t)&\le R_0 e^{-t}+M_R(1-e^{-t}),\\ S(t)&\le S_0 e^{-t}+M_S(1-e^{-t}). \end{aligned}</div>
+      </details>
+      <details class="reading solution" open><summary><span class="part">c</span> Почему отсутствуют периодические решения?</summary>
+        <p>В критерии Бендиксона — Дюлака берём множитель <span class="math">B\equiv1</span>. Дивергенция вычисляется по производным каждой компоненты по собственной координате:</p>
+        <div class="math display">\operatorname{div}(\dot R,\dot S)=\frac{\partial\dot R}{\partial R}+\frac{\partial\dot S}{\partial S}=-1-1=-2.</div>
+        <p>Поле гладкое на всей плоскости, а дивергенция имеет строгий отрицательный знак. Если бы была замкнутая орбита <span class="math">C</span>, поле было бы касательно к ней и поток через неё равнялся бы нулю. По формуле Грина тот же поток равен <span class="math">\iint_D(-2)\,dR\,dS=-2\,\mathrm{Area}(D)&lt;0</span>, где <span class="math">D</span> — внутренность <span class="math">C</span>. Противоречие исключает все нетривиальные периодические орбиты. Временные подъёмы и спады чувств при этом возможны.</p>
+      </details>
+      <details class="reading solution" open><summary><span class="part">d</span> Фазовый портрет и траектория первой встречи</summary>
+        <p>Подставляем <span class="math">A_S=1.2,\ A_R=1,\ k=15</span>. Нульклина — кривая, на которой одна компонента скорости равна нулю. Ищем пересечения двух нульклин:</p>
+        <div class="math display">R=1.2+15Se^{-S},\qquad S=1+15Re^{-R}.</div>
+        <p>Для численного поиска можно подставить вторую формулу в первую и искать корни на отрезке <span class="math">[1.2,\,1.2+15/e]</span>.</p>
+        <div class="math display">\begin{aligned} S(R)&=1+15Re^{-R},\\ 1.2+15S(R)e^{-S(R)}-R&=0.\end{aligned}</div>
+        <p>В отчёте пересечения найдены решателем с несколькими начальными приближениями. По левую сторону нульклины <span class="math">\dot R=0</span> поле направлено вправо, а по правую — влево. Ниже графика <span class="math">\dot S=0</span> — вверх, выше — вниз.</p>
+        <p>Дифференцируем правые части, затем подставляем координаты равновесий:</p>
+        <div class="math display">J(R,S)=\begin{pmatrix}-1 &amp; F'(S)\\ F'(R)&amp;-1\end{pmatrix}</div>
+        <div class="math display">\begin{aligned}\det(J-\lambda I)&amp;=(1+\lambda)^2-F'(R)F'(S),\\ \lambda_{\pm}&amp;=-1\pm\sqrt{F'(R)F'(S)}.\end{aligned}</div>
+        <div class="table-scroll"><table><thead><tr><th scope="col">Точка (R*, S*)</th><th scope="col">Собственные значения</th><th scope="col">Тип</th></tr></thead><tbody>
+          <tr><td>(1,390; 6,194)</td><td>−0,519; −1,481</td><td>Устойчивый узел · сильнее Скарлетт</td></tr>
+          <tr><td>(2,889; 3,411)</td><td>+0,372; −2,372</td><td>Седло</td></tr>
+          <tr><td>(6,678; 1,126)</td><td>−0,744; −1,256</td><td>Устойчивый узел · сильнее Ретт</td></tr>
+        </tbody></table></div>
+        <p>Два отрицательных действительных значения дают устойчивый узел, значения разных знаков — седло. Два узла дают два исхода при одних параметрах. Сепаратриса — устойчивое многообразие седла — разделяет их бассейны. Её строят обратным интегрированием с двух сторон седла вдоль направления отрицательного собственного значения.</p>
+        <p>В первой встрече <span class="math">R_0=S_0=0</span>, так что <span class="math">\dot R(0)=1.2,\ \dot S(0)=1</span>. Численное решение попадает в бассейн узла <span class="math">(6.678,1.126)</span>. Максимум чувств Скарлетт наступает при <span class="math">t\approx1.533</span>: <span class="math">S\approx2.837,\ R\approx3.291</span>. В этот момент траектория пересекает нульклину <span class="math">\dot S=0</span>.</p>
+        <p class="small">В отчёте использован численный метод RK45. Лаборатория считает методом Рунге — Кутты четвёртого порядка с шагом до 0,02 условной единицы.</p>
+        <div class="solution-figures">
+          <figure class="paper-figure"><a href="assets/report-phase.png" target="_blank" rel="noopener"><img src="assets/report-phase.png" alt="Фазовый портрет из отчёта с тремя равновесиями и траекторией от первой встречи" loading="lazy"></a><figcaption>Фазовый портрет из отчёта. Красная линия идёт от (0; 0) к правому нижнему узлу.</figcaption></figure>
+          <figure class="paper-figure"><a href="assets/report-timeline.png" target="_blank" rel="noopener"><img src="assets/report-timeline.png" alt="Временные графики с пиком вовлечённости Скарлетт при t около 1,53" loading="lazy"></a><figcaption>Временные ряды из отчёта. Пунктир отмечает максимум S.</figcaption></figure>
+        </div>
+        <a class="text-link" href="#lab" id="return-early">Повторить расчёт в лаборатории ↑</a>
+      </details>
+    </section>
+    <footer class="footer"><div class="wrap">
+      <h2>Источники</h2>
+      <p>С. Ринальди, Ф. Делла Росса, П. Ланди. <cite>A mathematical model of “Gone with the Wind”</cite>. Physica A, 392, 3231–3239, 2013. <a href="https://doi.org/10.1016/j.physa.2013.03.034">Статья по DOI ↗</a></p>
+      <p><a href="paper/Strogatz_7_2_19_Gone_With_The_Wind_Report_RU.pdf">Отчёт с решением и графиками ↗</a> <span aria-hidden="true">·</span> <a href="paper/strogatz_7_2_19_reproduce.py">Исходный расчёт на Python ↗</a></p>
+      <p class="small">Модель сопоставляет выбранные эпизоды с качественной динамикой чувств. Параметры выражают допущения авторов, а их шкалы не измерялись по фильму.</p>
+    </div></footer>
+  </main>
+</body>
+</html>
