@@ -53,6 +53,7 @@ function toJS(e, sym) {
     case 'Min': return `Math.min(${A.join(',')})`;
     case 'Delimiter': return A[0];
     case 'Error': throw new Error('incomplete expression');
+    case 'Complex': throw new Error('i is read as the imaginary unit');
   }
   if (FN1[h]) return `${FN1[h]}(${A[0]})`;
   if (typeof h === 'string' && isUserSym(h)) return `(${sym(h)}*${A.join('*')})`;
@@ -68,8 +69,62 @@ function userHeads(e, out = new Set()) {
   return [...out];
 }
 
+// The parsed tree written back as LaTeX, with nothing left implicit: every product gets a dot and every function its
+// brackets, so that a misreading (s·i·n(r) for sin r, or a(x−b) as a function a) can be seen. It follows toJS case by case.
+const TEX1 = { Sin:'\\sin', Cos:'\\cos', Tan:'\\tan', Arcsin:'\\arcsin', Arccos:'\\arccos', Arctan:'\\arctan',
+  Sinh:'\\sinh', Cosh:'\\cosh', Tanh:'\\tanh', Sec:'\\sec', Csc:'\\csc', Cot:'\\cot', Exp:'\\exp', Ln:'\\ln', Log:'\\log',
+  Max:'\\max', Min:'\\min' };
+const TEXC = { Pi:'\\pi', ExponentialE:'e', Half:'\\frac{1}{2}', PositiveInfinity:'\\infty', NegativeInfinity:'-\\infty', NaN:'\\mathrm{NaN}',
+  ImaginaryUnit:'\\mathrm{i}' };
+const texName = n => /^[a-zA-Z]$/.test(n) || GREEK.includes(n) || /^[^_]+_\w+$/.test(n) ? symTex(n) : `\\mathrm{${n.replace(/_/g, '\\_')}}`;
+const par = t => `\\left(${t}\\right)`;
+function toTex(e) {
+  if (typeof e === 'number') return String(e);
+  if (typeof e === 'string') return TEXC[e] ?? texName(e);
+  if (!Array.isArray(e)) {
+    if (e && 'num' in e) return String(e.num);
+    if (e && 'sym' in e) return toTex(e.sym);
+    if (e && 'fn' in e) return toTex(e.fn);
+    return '\\mathord{?}';
+  }
+  const [h, ...args] = e;
+  const head = a => Array.isArray(a) ? a[0] : null;
+  const neg = a => (typeof a === 'number' && a < 0) || head(a) === 'Negate' || a === 'NegativeInfinity'
+    || (head(a) === 'Multiply' && neg(a[1]));
+  const sum = a => ['Add', 'Subtract'].includes(head(a));
+  const T = a => toTex(a);
+  const term = a => sum(a) || neg(a) ? par(T(a)) : T(a);                 // inside a product
+  const atom = a => (typeof a === 'string') || (typeof a === 'number' && a >= 0) ? T(a) : par(T(a));
+  switch (h) {
+    case 'Add': return args.map(T).map((t, i) => i && !t.startsWith('-') ? '+' + t : t).join('');
+    case 'Subtract': return `${T(args[0])}-${sum(args[1]) || neg(args[1]) ? par(T(args[1])) : T(args[1])}`;
+    case 'Multiply': return args.map((a, i) => i ? term(a) : sum(a) ? par(T(a)) : T(a)).join('\\cdot ');
+    case 'Negate': return `-${sum(args[0]) || neg(args[0]) ? par(T(args[0])) : T(args[0])}`;
+    case 'Divide': case 'Rational': return `\\frac{${T(args[0])}}{${T(args[1])}}`;
+    case 'Power': return `${atom(args[0])}^{${T(args[1])}}`;
+    case 'Square': return `${atom(args[0])}^{2}`;
+    case 'Sqrt': return `\\sqrt{${T(args[0])}}`;
+    case 'Root': return `\\sqrt[${T(args[1])}]{${T(args[0])}}`;
+    case 'Abs': return `\\left|${T(args[0])}\\right|`;
+    case 'Complex': return args[0] === 0 && args[1] === 1 ? '\\mathrm{i}' : par(`${T(args[0])}+${T(args[1])}\\mathrm{i}`);
+    case 'Delimiter': return T(args[0]);
+    case 'Error': return '\\mathord{?}';
+  }
+  const A = par(args.map(T).join(','));
+  if (h === 'Log' && args.length > 1) return `\\log_{${T(args[1])}}${par(T(args[0]))}`;
+  if (TEX1[h]) return TEX1[h] + A;
+  if (typeof h === 'string' && isUserSym(h) && !FN1[h]) return `${texName(h)}\\cdot ${args.map(a => par(T(a))).join('\\cdot ')}`;
+  return `\\operatorname{${String(h).toLowerCase()}}${A}`;
+}
+
+const FN_NAMES = 'arcsin|arccos|arctan|sinh|cosh|tanh|sin|cos|tan|sec|csc|cot|exp|ln|log';   // longer names first
+
 function compileLatex(latex, vars) {
-  const rhs = latex.split('=').pop().trim();
+  // MathLive turns a typed "sin" into \sin, but not when it comes from the virtual keyboard or a paste; bare letters
+  // would parse as the product s·i·n with i the imaginary unit. Read a spelled-out function name as the function.
+  const rhs = latex.split('=').pop().trim()
+    .replace(new RegExp(`\\\\(?:mathrm|operatorname)\\{(${FN_NAMES})\\}`, 'g'), '\\$1 ')
+    .replace(new RegExp(`(?<!\\\\[a-zA-Z]*)(${FN_NAMES})`, 'g'), '\\$1 ');
   if (!rhs) return null;
   // CE infers and remembers symbol types (x(a−y) would make x a function), so isolate each parse
   const parse = names => {
@@ -85,8 +140,11 @@ function compileLatex(latex, vars) {
   let parsed = parse(vars);
   const heads = userHeads(parsed.json).filter(h => !vars.includes(h));
   if (heads.length) parsed = parse([...vars, ...heads]);
-  if (!parsed.valid) throw new Error('incomplete expression');
   const ex = parsed.json;
+  let tex = '';
+  if (parsed.valid) try { tex = toTex(ex); } catch { /* a tree too odd to write down gets no reading */ }
+  const fail = msg => Object.assign(new Error(msg), { tex });
+  if (!parsed.valid) throw fail('incomplete expression');
   const params = new Set();
   const sym = n => {
     if (n === vars[0]) return 'x';
@@ -94,12 +152,13 @@ function compileLatex(latex, vars) {
     params.add(n);
     return `P[${JSON.stringify(n)}]`;
   };
-  const code = toJS(ex, sym);
+  let code;
+  try { code = toJS(ex, sym); } catch (e) { throw fail(e.message); }
   const fn = new Function('_root', `return (x,y,P) => ${code};`)(_root);
   let poly = null, polyErr = null;
   try { poly = collect(polyOf(ex, vars)); }
   catch (e) { if (!(e instanceof NotPoly)) throw e; polyErr = e.message; }
-  return { fn, params: [...params], poly, polyErr, json: ex };
+  return { fn, params: [...params], poly, polyErr, json: ex, tex };
 }
 
 // ---------- polynomial form, for the mass-action reaction network ----------

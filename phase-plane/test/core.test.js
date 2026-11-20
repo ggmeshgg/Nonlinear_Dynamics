@@ -158,6 +158,34 @@ test('the divergence and the reaction network read a(x−b)² the same way', () 
   close(coeff(0, '"a"^1*"b"^2'), 1, 1e-12);
 });
 
+test('a function name spelled in plain letters is the function', () => {
+  const v = ['r', 'theta'];
+  for (const tex of ['r\\cdot sin\\left(r\\right)', 'rsin\\left(r\\right)', 'r\\cdot\\mathrm{sin}\\left(r\\right)', 'r\\cdot\\operatorname{sin}\\left(r\\right)', 'r\\sin\\left(r\\right)']) {
+    const c = compileLatex(tex, v);
+    close(c.fn(2, 0, P), 2 * Math.sin(2), 1e-12);
+    assert.deepEqual(c.params, []);
+  }
+  close(compileLatex('tanh\\left(r\\right)+ln\\left(r\\right)+cos\\theta', v).fn(2, 0.3, P), Math.tanh(2) + Math.log(2) + Math.cos(0.3), 1e-12);
+  // names already written as commands, and Greek letters, are left alone
+  close(compileLatex('\\sinh\\left(r\\right)+\\theta+\\arctan r', v).fn(2, 0.3, P), Math.sinh(2) + 0.3 + Math.atan(2), 1e-12);
+});
+
+test('the reading written back as LaTeX is the tree that is computed', () => {
+  const v = ['x', 'y'];
+  // parsing the reading again gives the same function
+  for (const tex of ['a(x-b)^2', '\\mu x-y+\\frac{x^2}{1+y}', 'e^{-x}y-2x', '-(x+y)^2-x^{-1}', '\\log_2 x+\\ln x+\\sqrt[3]{x}', 'x-(y-1)-(-y)',
+    '\\frac{-x}{2}(x+1)(y-1)', '\\sqrt{x}+\\frac12-\\left|y\\right|', '2\\pi x\\cdot(-3)', 'x_1\\sin\\left(xy\\right)^2', '\\max(x,y)\\tanh x']) {
+    const c = compileLatex(tex, v), back = compileLatex(c.tex, v);
+    for (const n of new Set([...c.params, ...back.params])) P[n] = 0.7;
+    for (const [x, y] of [[1.3, 0.4], [2.1, 1.7], [0.6, 2.9]]) close(back.fn(x, y, P), c.fn(x, y, P), 1e-9);
+  }
+  // products are explicit, so letters that were not a function show as letters
+  assert.equal(compileLatex('r\\sin\\left(r\\right)', ['r', 'theta']).tex, 'r\\cdot \\sin\\left(r\\right)');
+  assert.throws(() => compileLatex('r\\cdot s\\cdot i\\cdot n\\left(r\\right)', ['r', 'theta']),
+    e => /imaginary/.test(e.message) && e.tex.includes('\\mathrm{i}') && e.tex.includes('s') && !e.tex.includes('\\sin'));
+  assert.throws(() => compileLatex('x+', v), e => e.tex === '');   // a half-typed expression has no reading
+});
+
 test('polar ṙ, θ̇ become ẋ, ẏ', () => {
   load('r(1-r^2)', '1', { polar: true });
   // at (x, y) = (0.5, 0): ṙ = 0.5·0.75, θ̇ = 1 → ẋ = ṙ, ẏ = r θ̇
